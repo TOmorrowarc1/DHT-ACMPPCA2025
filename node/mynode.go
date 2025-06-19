@@ -270,22 +270,15 @@ func (node *Node) Location(target_id uint64) NodeInfo {
 	return content
 }
 
-func (node *Node) GetLocal(target_id uint64) (bool, string) {
-	logrus.Infof("Get from local %s", target_id)
-	node.NodeInfoLock.RLock()
-	self_id := node.FNV1aHash(node.Addr)
-	node.NodeInfoLock.RUnlock()
-	key := DataPair{self_id, target_id, ""}
-	value, ok := node.SafeGet(key)
-	return ok, value
-}
-
 func (node *Node) Get(key string) (bool, string) {
 	logrus.Infof("Get %s", key)
 	target_id := node.FNV1aHash(key)
 	node.NodeInfoLock.RLock()
-	if node.IsBetween(node.FNV1aHash(node.Predecessor), node.FNV1aHash(node.Addr), target_id) {
-		return node.GetLocal(target_id)
+	self_id := node.FNV1aHash(node.Addr)
+	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
+		key := DataPair{self_id, target_id, ""}
+		value, ok := node.SafeGet(key)
+		return ok, value
 	}
 	node.NodeInfoLock.RUnlock()
 	info := node.Location(target_id)
@@ -315,8 +308,10 @@ func (node *Node) Put(key string, value string) bool {
 	target_id := node.FNV1aHash(key)
 	flag := false
 	node.NodeInfoLock.RLock()
-	if node.IsBetween(node.FNV1aHash(node.Predecessor), node.FNV1aHash(node.Addr), target_id) {
-		target := DataPair{node.FNV1aHash(node.Addr), target_id, value}
+	self_id := node.FNV1aHash(node.Addr)
+	self_predecessor := node.FNV1aHash(node.Predecessor)
+	if node.IsBetween(self_predecessor, self_id, target_id) {
+		target := DataPair{self_id, target_id, value}
 		node.SafeWrite(target)
 		for i := 0; i < 5; i++ {
 			node.RemoteCall(node.SuccessorList[i], "Node.PutPair", target, &flag)
@@ -337,13 +332,19 @@ func (node *Node) Put(key string, value string) bool {
 
 func (node *Node) Delete(key string) bool {
 	logrus.Infof("Delete %s", key)
-	logrus.Infof("Put %s %s", key, value)
 	target_id := node.FNV1aHash(key)
+	flag := false
 	node.NodeInfoLock.RLock()
-	if node.IsBetween(node.FNV1aHash(node.Predecessor), node.FNV1aHash(node.Addr), target_id) {
-		target := DataPair{node.FNV1aHash(node.Addr), target_id, value}
-		node.SafeWrite(target)
-		return true
+	self_id := node.FNV1aHash(node.Addr)
+	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
+		target := DataPair{self_id, target_id, ""}
+		node.DataLock.Lock()
+		delete(node.Data[self_id], target_id)
+		node.DataLock.Unlock()
+		for i := 0; i < 5; i++ {
+			node.RemoteCall(node.SuccessorList[i], "Node.DeletePair", target, &flag)
+		}
+		return flag
 	}
 	node.NodeInfoLock.RUnlock()
 	info := node.Location(target_id)
@@ -351,17 +352,14 @@ func (node *Node) Delete(key string) bool {
 	for _, node_id := range info.SuccessorList {
 		current_node_id := node_id
 		go func() {
-			flag := false
 			node.RemoteCall(current_node_id, "Node.PutPair", key_info, &flag)
 		}()
 	}
-	return true
+	return flag
 }
 
 func (node *Node) Quit() {
 	logrus.Infof("Quit %s", node.Addr)
-	// Inform all the nodes in the network that this node is quitting.
-	node.broadcastCall("Node.RemovePeer", node.Addr, nil)
 	node.StopRPCServer()
 }
 
