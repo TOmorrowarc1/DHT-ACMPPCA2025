@@ -42,14 +42,9 @@ type Node struct {
 // Note: It must be exported (i.e., Capitalized) so that it can be
 // used as the argument type of RPC methods.
 
-type String2Pair struct {
-	Node string
-	Key  string
-}
-
-type String3Pair struct {
-	Node  string
-	Key   string
+type DataPair struct {
+	Node  uint64
+	Key   uint64
 	Value string
 }
 
@@ -58,7 +53,7 @@ type StringBoolPair struct {
 	ok    bool
 }
 
-type StringMapPair struct {
+type MapPair struct {
 	Node uint64
 	Map  map[uint64]string
 }
@@ -86,7 +81,7 @@ func (node *Node) IsBetween(start uint64, end uint64, target uint64) bool {
 	return (target > start && target <= end)
 }
 
-func (node *Node) SafeGet(pair String2Pair) (string, bool) {
+func (node *Node) SafeGet(pair DataPair) (string, bool) {
 	node.DataLock.RLock()
 	defer node.DataLock.RUnlock()
 	if inner, ok := node.Data[pair.Node]; ok {
@@ -96,10 +91,10 @@ func (node *Node) SafeGet(pair String2Pair) (string, bool) {
 	return "", false
 }
 
-func (node *Node) SafeWrite(pair String3Pair) {
+func (node *Node) SafeWrite(pair DataPair) {
 	node.DataLock.Lock()
 	if node.Data[pair.Node] == nil {
-		node.Data[pair.Node] = make(map[string]string)
+		node.Data[pair.Node] = make(map[uint64]string)
 	}
 	node.Data[pair.Node][pair.Key] = pair.Value
 	node.DataLock.Unlock()
@@ -109,7 +104,7 @@ func (node *Node) SafeWrite(pair String3Pair) {
 // Addr is the address and port number of the node, e.g., "localhost:1234".
 func (node *Node) Init(addr string) {
 	node.Addr = addr
-	node.Data = make(map[string]map[string]string)
+	node.Data = make(map[uint64]map[uint64]string)
 	node.SuccessorList = make([]string, 6, 6)
 	node.FingersTable = make([]string, 64, 64)
 }
@@ -175,7 +170,7 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 
 // Here we use "_" to ignore the arguments we don't need.
 // The empty struct "{}" is used to represent "void" in Go.
-
+// These are functions in which the node serves as a server.
 func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error {
 	flag := false
 	for i := len(node.FingersTable); i >= 0 && !flag; i-- {
@@ -190,8 +185,48 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 	return nil
 }
 
-func (node *Node) GetPair(key String2Pair, reply *StringBoolPair) error {
+func (node *Node) GetPair(key DataPair, reply *StringBoolPair) error {
 	reply.value, reply.ok = node.SafeGet(key)
+	return nil
+}
+
+func (node *Node) PutPair(pair DataPair, _ *struct{}) error {
+	node.SafeWrite(pair)
+	return nil
+}
+
+func (node *Node) PutData(data MapPair, _ *struct{}) error {
+	node.DataLock.Lock()
+	node.Data[data.Node] = data.Map
+	node.DataLock.Unlock()
+	return nil
+}
+
+func (node *Node) DeletePair(pair DataPair, flag *bool) error {
+	_, ok := node.SafeGet(pair)
+	if ok {
+		delete(node.Data[pair.Node], pair.Key)
+	}
+	*flag = ok
+	return nil
+}
+
+func (node *Node) DeleteData(pair DataPair, _ *struct{}) error {
+	node.DataLock.Lock()
+	delete(node.Data, pair.Node)
+	node.DataLock.Unlock()
+	return nil
+}
+
+func (node *Node) SplitData(pair DataPair, flag *bool) error {
+	node.DataLock.Lock()
+	node.Data[pair.Key] = make(map[uint64]string)
+	for key, value := range node.Data[pair.Node] {
+		if !node.IsBetween(pair.Key, pair.Node, key) {
+			node.Data[pair.Key][key] = value
+		}
+	}
+	node.DataLock.Unlock()
 	return nil
 }
 
@@ -202,38 +237,6 @@ func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	reply.SuccessorList = node.SuccessorList
 	node.NodeInfoLock.RUnlock()
 	return nil
-}
-
-func (node *Node) PutPair(pair String3Pair, _ *struct{}) error {
-	node.SafeWrite(pair)
-	return nil
-}
-
-func (node *Node) PutData(data StringMapPair, _ *struct{}) error {
-	node.DataLock.Lock()
-	node.Data[data.Node] = data.Map
-	node.DataLock.Unlock()
-	return nil
-}
-
-func (node *Node) DeletePair(pair String2Pair, flag *bool) error {
-	_, ok := node.SafeGet(pair)
-	delete(node.Data[pair.Node], pair.Key)
-	*flag = ok
-	return nil
-}
-
-func (node *Node) SplitData(pair String2Pair, flag *bool) error {
-	node.DataLock.Lock()
-	node.Data[pair.Key] = make(map[string]string)
-	if node.Data[pair.Node]!=nil{
-		for 
-	}
-	node.DataLock.Unlock()
-}
-
-func (node *Node) Pong(_ string, _ *struct{}) error {
-
 }
 
 //
@@ -248,19 +251,9 @@ func (node *Node) Run() {
 func (node *Node) Create() {
 	logrus.Info("Create")
 }
+
 func (node *Node) Join(addr string) bool {
 	logrus.Infof("Join %s", addr)
-	// Copy Data from the node at addr.
-	node.DataLock.Lock()
-	node.RemoteCall(addr, "Node.GetData", "", &node.Data)
-	node.DataLock.Unlock()
-	// Copy the peer list from the node at addr.
-	node.peersLock.Lock()
-	node.RemoteCall(addr, "Node.GetPeers", "", &node.peers)
-	node.peers[addr] = struct{}{}
-	node.peersLock.Unlock()
-	// Inform all the nodes in the network that a new node has joined.
-	node.broadcastCall("Node.AddPeer", node.Addr, nil)
 	return true
 }
 
@@ -281,11 +274,13 @@ func (node *Node) Location(target_id uint64) NodeInfo {
 	return content
 }
 
-func (node *Node) GetLocal(key string) (bool, string) {
-	logrus.Infof("Get from local %s", key)
-	node.DataLock.RLock()
-	value, ok := node.Data[node.Addr][key]
-	node.DataLock.RUnlock()
+func (node *Node) GetLocal(target_id uint64) (bool, string) {
+	logrus.Infof("Get from local %s", target_id)
+	node.NodeInfoLock.RLock()
+	self_id := node.FNV1aHash(node.Addr)
+	node.NodeInfoLock.RUnlock()
+	key := DataPair{self_id, target_id, ""}
+	value, ok := node.SafeGet(key)
 	return ok, value
 }
 
@@ -293,10 +288,10 @@ func (node *Node) Get(key string) (bool, string) {
 	logrus.Infof("Get %s", key)
 	target_id := node.FNV1aHash(key)
 	if node.IsBetween(node.FNV1aHash(node.Predecessor), node.FNV1aHash(node.Addr), target_id) {
-		return node.GetLocal(key)
+		return node.GetLocal(target_id)
 	}
 	info := node.Location(target_id)
-	key_info := String2Pair{info.SuccessorList[0], key}
+	key_info := DataPair{node.FNV1aHash(info.SuccessorList[0]), target_id, ""}
 	result_chan := make(chan StringBoolPair, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
