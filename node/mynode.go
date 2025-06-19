@@ -105,8 +105,8 @@ func (node *Node) SafeWrite(pair DataPair) {
 func (node *Node) Init(addr string) {
 	node.Addr = addr
 	node.Data = make(map[uint64]map[uint64]string)
-	node.SuccessorList = make([]string, 6, 6)
-	node.FingersTable = make([]string, 64, 64)
+	node.SuccessorList = make([]string, 6)
+	node.FingersTable = make([]string, 64)
 }
 
 func (node *Node) RunRPCServer() {
