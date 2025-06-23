@@ -3,6 +3,7 @@ package node
 
 import (
 	"context"
+	"math/rand"
 	"net"
 	"net/rpc"
 	"os"
@@ -21,7 +22,7 @@ func init() {
 	logrus.SetOutput(f)
 }
 
-const RingSize uint64 = 1 << 63
+const RingSize uint64 = 1<<64 - 1
 
 type Node struct {
 	Addr   string // address and port number of the node, e.g., "localhost:1234"
@@ -105,7 +106,7 @@ func (node *Node) SafeWrite(pair DataPair) {
 func (node *Node) Init(addr string) {
 	node.Addr = addr
 	node.Data = make(map[uint64]map[uint64]string)
-	node.SuccessorList = make([]string, 6)
+	node.SuccessorList = make([]string, 0, 6)
 	node.FingersTable = make([]string, 64)
 }
 
@@ -222,8 +223,9 @@ func (node *Node) SplitData(pair DataPair, flag *bool) error {
 	node.DataLock.Lock()
 	node.Data[pair.Key] = make(map[uint64]string)
 	for key, value := range node.Data[pair.Node] {
-		if !node.IsBetween(pair.Key, pair.Node, key) {
+		if node.IsBetween(pair.Key, pair.Node, key) {
 			node.Data[pair.Key][key] = value
+			delete(node.Data[pair.Node], key)
 		}
 	}
 	node.DataLock.Unlock()
@@ -236,6 +238,32 @@ func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	reply.Predecessor = node.Predecessor
 	reply.SuccessorList = node.SuccessorList
 	node.NodeInfoLock.RUnlock()
+	return nil
+}
+
+func (node *Node) ChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
+	node.NodeInfoLock.Lock()
+	if new_info.Predecessor != "" {
+		node.Predecessor = new_info.Predecessor
+	}
+	if new_info.SuccessorList[0] != "" {
+		node.SuccessorList = new_info.SuccessorList
+	}
+	node.NodeInfoLock.Unlock()
+	return nil
+}
+
+func (node *Node) Notify(predecessor string, _ *struct{}) error {
+	node.NodeInfoLock.Lock()
+	if node.IsBetween(node.FNV1aHash(node.Predecessor), node.FNV1aHash(node.Addr), node.FNV1aHash(predecessor)) {
+		node.Predecessor = predecessor
+	}
+	node.NodeInfoLock.Unlock()
+	return nil
+}
+
+func (node *Node) Pong(_ string, flag *bool) error {
+	*flag = true
 	return nil
 }
 
@@ -258,7 +286,7 @@ func (node *Node) Join(addr string) bool {
 }
 
 // If the node misses the key, search for its position.
-func (node *Node) Location(target_id uint64) NodeInfo {
+func (node *Node) FindPredecessor(target_id uint64) NodeInfo {
 	node.NodeInfoLock.RLock()
 	content := NodeInfo{node.Addr, "nowhere", node.SuccessorList}
 	node.NodeInfoLock.RUnlock()
@@ -266,7 +294,7 @@ func (node *Node) Location(target_id uint64) NodeInfo {
 		content.Predecessor = content.Addr
 		node.RemoteCall(content.Predecessor, "Node.FindClosestPredecessor", target_id, &content.Addr)
 	}
-	node.RemoteCall(content.Predecessor, "Node.GetNodeInfo", "", &content)
+	node.RemoteCall(content.Addr, "Node.GetNodeInfo", "", &content)
 	return content
 }
 
@@ -281,7 +309,7 @@ func (node *Node) Get(key string) (bool, string) {
 		return ok, value
 	}
 	node.NodeInfoLock.RUnlock()
-	info := node.Location(target_id)
+	info := node.FindPredecessor(target_id)
 	key_info := DataPair{node.FNV1aHash(info.SuccessorList[0]), target_id, ""}
 	result_chan := make(chan StringBoolPair, 1)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -319,7 +347,7 @@ func (node *Node) Put(key string, value string) bool {
 		return true
 	}
 	node.NodeInfoLock.RUnlock()
-	info := node.Location(target_id)
+	info := node.FindPredecessor(target_id)
 	key_info := DataPair{node.FNV1aHash(info.SuccessorList[0]), target_id, ""}
 	for _, node_id := range info.SuccessorList {
 		current_node_id := node_id
@@ -347,7 +375,7 @@ func (node *Node) Delete(key string) bool {
 		return flag
 	}
 	node.NodeInfoLock.RUnlock()
-	info := node.Location(target_id)
+	info := node.FindPredecessor(target_id)
 	key_info := DataPair{node.FNV1aHash(info.SuccessorList[0]), target_id, ""}
 	for _, node_id := range info.SuccessorList {
 		current_node_id := node_id
@@ -368,8 +396,45 @@ func (node *Node) ForceQuit() {
 	node.StopRPCServer()
 }
 
-func (node *Node) Stablize() {}
+func (node *Node) Stablize() {
+	node.NodeInfoLock.RLock()
+	current_node := NodeInfo{node.Addr, node.Predecessor, node.SuccessorList}
+	node.NodeInfoLock.RUnlock()
+	if len(current_node.SuccessorList) == 0 {
+		//The node has not entered the net.
+		return
+	}
+	current_successor := NodeInfo{node.SuccessorList[0], "", node.SuccessorList}
+	err := node.RemoteCall(current_successor.Addr, "Node.GetNodeInfo", "", &current_successor)
+	if err != nil {
+		//The health check failed.
+		return
+	}
+	if current_successor.Predecessor != "" && node.IsBetween(node.FNV1aHash(current_node.Addr), node.FNV1aHash(current_successor.Addr), node.FNV1aHash(current_successor.Predecessor)) {
+		node.NodeInfoLock.Lock()
+		node.SuccessorList[0] = current_successor.Predecessor
+		node.NodeInfoLock.Unlock()
+	}
+	err = node.RemoteCall(current_node.SuccessorList[0], "Node.Notify", current_node.Addr, nil)
+	if err != nil {
+		//health check.
+		return
+	}
+}
 
-func (node *Node) FingersTableBuild() {}
+func (node *Node) FixFingers() {
+	i := rand.Intn(64)
+	target_id := (node.FNV1aHash(node.Addr) + 1<<i) % RingSize
+	node.FingersTable[i] = node.FindPredecessor(target_id).SuccessorList[0]
+}
 
-func (node *Node) Ping() {}
+func (node *Node) PingPredecessor() {
+	flag := false
+	if node.RemoteCall(node.Predecessor, "Node.Pong", "", &flag) != nil || !flag {
+		node.Predecessor = ""
+	}
+}
+
+func (node *Node) SuccessorListPing() {
+
+}
