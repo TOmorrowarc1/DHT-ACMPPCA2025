@@ -7,6 +7,7 @@ import (
 	"net/rpc"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -24,8 +25,7 @@ func init() {
 const RingSize uint64 = 1<<64 - 1
 
 type Node struct {
-	Addr   string // address and port number of the node, e.g., "localhost:1234"
-	online bool
+	Addr string // address and port number of the node, e.g., "localhost:1234"
 
 	Listener      net.Listener
 	Server        *rpc.Server
@@ -36,6 +36,9 @@ type Node struct {
 	TableLock     sync.RWMutex
 	Data          map[uint64]map[uint64]string
 	DataLock      sync.RWMutex
+
+	Online uint32
+	Wait   sync.WaitGroup
 }
 
 // Pair is used to store a key-value pair.
@@ -105,7 +108,8 @@ func (node *Node) SafeWrite(pair DataPair) {
 func (node *Node) Init(addr string) {
 	node.Addr = addr
 	node.Data = make(map[uint64]map[uint64]string)
-	node.SuccessorList = make([]string, 0, 6)
+	node.Data[node.FNV1aHash(addr)] = make(map[uint64]string)
+	node.SuccessorList = make([]string, 6)
 	node.FingersTable = make([]string, 64)
 }
 
@@ -117,7 +121,7 @@ func (node *Node) RunRPCServer() {
 	if err != nil {
 		logrus.Fatal("listen error: ", err)
 	}
-	for node.online {
+	for node.Online == 1 {
 		conn, err := node.Listener.Accept()
 		if err != nil {
 			logrus.Error("accept error: ", err)
@@ -128,7 +132,6 @@ func (node *Node) RunRPCServer() {
 }
 
 func (node *Node) StopRPCServer() {
-	node.online = false
 	node.Listener.Close()
 }
 
@@ -219,6 +222,23 @@ func (node *Node) DeleteData(pair DataPair, _ *struct{}) error {
 	return nil
 }
 
+func (node *Node) SplitData(target_id uint64, pair *MapPair) error {
+	node.DataLock.Lock()
+	node.Data[pair.Node] = make(map[uint64]string)
+	for key, value := range node.Data[pair.Node] {
+		if node.IsBetween(pair.Node, pair.Node, key) {
+			node.Data[pair.Node][key] = value
+			delete(node.Data[pair.Node], key)
+		}
+	}
+	node.DataLock.Unlock()
+	return nil
+}
+
+func (node *Node) MergeData(target_id uint64, node_info *NodeInfo) error {
+
+}
+
 func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	node.NodeInfoLock.RLock()
 	reply.Addr = node.Addr
@@ -259,17 +279,112 @@ func (node *Node) Pong(_ string, flag *bool) error {
 //
 
 func (node *Node) Run() {
-	node.online = true
+	node.Online = 1
 	go node.RunRPCServer()
 }
 
 func (node *Node) Create() {
 	logrus.Info("Create")
+	node.NodeInfoLock.Lock()
+	node.Predecessor = node.Addr
+	node.SuccessorList[0] = node.Addr
+	for i := 0; i < 64; i++ {
+		node.FingersTable[i] = node.Addr
+	}
+	node.NodeInfoLock.Unlock()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.Stablize()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.FixFingers()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.PingPredecessor()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.PingSuccessorList()
+		}
+	}()
 }
 
 func (node *Node) Join(addr string) bool {
 	logrus.Infof("Join %s", addr)
+	node_info := NodeInfo{
+		Addr: addr,
+	}
+	node.NodeInfoLock.RLock()
+	target_id := node.FNV1aHash(node.Addr)
+	node.NodeInfoLock.RUnlock()
+	for node_info.Addr != node_info.Predecessor {
+		node_info.Predecessor = node_info.Addr
+		node.RemoteCall(node_info.Predecessor, "Node.FindClosestPredecessor", target_id, &node_info.Addr)
+	}
+	node.RemoteCall(node_info.Predecessor, "Node.GetNodeInfo", "", &node_info)
+	node.NodeInfoLock.Lock()
+	node.Predecessor = node_info.Addr
+	node.SuccessorList = node_info.SuccessorList
+	node.NodeInfoLock.Unlock()
+	flag := false
+	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node.Addr, &flag)
+	node_data := MapPair{
+		Node: target_id,
+	}
+	node.RemoteCall(node_info.SuccessorList[0], "Node.SplitData", "", &node_data)
+	node.DataLock.Lock()
+	node.Data[node_data.Node] = node_data.Map
+	node.DataLock.Unlock()
+	node.Wait.Add(4)
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.Stablize()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.FixFingers()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.PingPredecessor()
+		}
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.PingSuccessorList()
+		}
+	}()
 	return true
+}
+
+func (node *Node) Quit() {
+	logrus.Infof("Quit %s", node.Addr)
+
+	atomic.StoreUint32(&node.Online, 0)
+	node.StopRPCServer()
+	node.Wait.Wait()
+}
+
+func (node *Node) ForceQuit() {
+	logrus.Info("ForceQuit")
+	atomic.StoreUint32(&node.Online, 0)
+	node.StopRPCServer()
+	node.Wait.Wait()
 }
 
 // If the node misses the key, search for its position.
@@ -374,16 +489,6 @@ func (node *Node) Delete(key string) bool {
 	return flag
 }
 
-func (node *Node) Quit() {
-	logrus.Infof("Quit %s", node.Addr)
-	node.StopRPCServer()
-}
-
-func (node *Node) ForceQuit() {
-	logrus.Info("ForceQuit")
-	node.StopRPCServer()
-}
-
 func (node *Node) Stablize() {
 	node.NodeInfoLock.RLock()
 	current_node := NodeInfo{
@@ -426,7 +531,7 @@ func (node *Node) PingPredecessor() {
 	}
 }
 
-func (node *Node) SuccessorListPing() {
+func (node *Node) PingSuccessorList() {
 	flag := false
 	cursor := 0
 	var current_node NodeInfo
@@ -438,15 +543,18 @@ func (node *Node) SuccessorListPing() {
 	for ; cursor < len(current_node.SuccessorList) && !flag; cursor++ {
 		node.RemoteCall(current_node.SuccessorList[cursor], "Node.Pong", "", &flag)
 	}
-	node.RemoteCall(current_node.SuccessorList[cursor], "Node.GetNodeInfo", "", &current_successor)
-	node.NodeInfoLock.Lock()
-	node.SuccessorList[0] = current_node.SuccessorList[cursor]
-	for i := 1; i < 6; i++ {
-		node.SuccessorList[i] = current_successor.SuccessorList[i-1]
+	cursor--
+	if cursor != 0 {
+		node.RemoteCall(current_node.SuccessorList[cursor], "Node.MergeData", current_node.Addr, &current_successor)
+		node.NodeInfoLock.Lock()
+		node.SuccessorList[0] = current_node.SuccessorList[cursor]
+		for i := 1; i < 6; i++ {
+			node.SuccessorList[i] = current_successor.SuccessorList[i-1]
+		}
+		current_node.SuccessorList = node.SuccessorList
+		current_node.Addr = node.Addr
+		node.NodeInfoLock.Unlock()
 	}
-	current_node.SuccessorList = node.SuccessorList
-	current_node.Addr = node.Addr
-	node.NodeInfoLock.Unlock()
 	//Push the copies.
 	self_id := node.FNV1aHash(current_node.Addr)
 	node.DataLock.RLock()
