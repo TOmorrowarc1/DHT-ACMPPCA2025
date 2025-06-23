@@ -436,5 +436,21 @@ func (node *Node) PingPredecessor() {
 }
 
 func (node *Node) SuccessorListPing() {
-
+	flag := false
+	cursor := 0
+	var current_node NodeInfo
+	var current_successor NodeInfo
+	node.NodeInfoLock.RLock()
+	current_node.SuccessorList = node.SuccessorList
+	node.NodeInfoLock.RUnlock()
+	for ; cursor < len(current_node.SuccessorList) && !flag; cursor++ {
+		node.RemoteCall(current_node.SuccessorList[cursor], "Node.Pong", "", &flag)
+	}
+	node.RemoteCall(current_node.SuccessorList[cursor], "Node.GetNodeInfo", "", &current_successor)
+	node.NodeInfoLock.Lock()
+	node.SuccessorList[0] = current_node.SuccessorList[cursor]
+	for i := 1; i < 6; i++ {
+		node.SuccessorList[i] = current_successor.SuccessorList[i-1]
+	}
+	node.NodeInfoLock.Unlock()
 }
