@@ -175,16 +175,23 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 // The empty struct "{}" is used to represent "void" in Go.
 // These are functions in which the node serves as a server.
 func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error {
+	node.NodeInfoLock.RLock()
+	self_id := node.FNV1aHash(node.Addr)
+	node.NodeInfoLock.RUnlock()
 	flag := false
+	node.TableLock.RLock()
 	for i := len(node.FingersTable); i >= 0 && !flag; i-- {
-		if !node.IsBetween(node.FNV1aHash(node.Addr), node.FNV1aHash(node.FingersTable[i]), target_id) {
+		if !node.IsBetween(self_id, node.FNV1aHash(node.FingersTable[i]), target_id) {
 			*reply = node.FingersTable[i]
 			//Check the predecessor we find is online.
 			node.RemoteCall(*reply, "Node.Pong", "", &flag)
 		}
 	}
+	node.TableLock.RUnlock()
 	if !flag {
+		node.NodeInfoLock.RLock()
 		*reply = node.Addr
+		node.NodeInfoLock.RUnlock()
 	}
 	return nil
 }
@@ -222,7 +229,7 @@ func (node *Node) DeleteData(pair DataPair, _ *struct{}) error {
 	return nil
 }
 
-func (node *Node) SplitData(target_id uint64, pair *MapPair) error {
+func (node *Node) SplitData(pair MapPair, _ *struct{}) error {
 	node.DataLock.Lock()
 	node.Data[pair.Node] = make(map[uint64]string)
 	for key, value := range node.Data[pair.Node] {
@@ -236,7 +243,23 @@ func (node *Node) SplitData(target_id uint64, pair *MapPair) error {
 }
 
 func (node *Node) MergeData(target_id uint64, node_info *NodeInfo) error {
-
+	self_id := node.FNV1aHash(node.Addr)
+	node.DataLock.Lock()
+	for key, value := range node.Data {
+		if node.IsBetween(target_id, self_id, key) {
+			for key_in, value_in := range value {
+				node.Data[target_id][key_in] = value_in
+			}
+			delete(node.Data, key)
+		}
+	}
+	node.DataLock.Unlock()
+	node.NodeInfoLock.RLock()
+	node_info.Addr = node.Addr
+	node_info.Predecessor = node.Predecessor
+	node_info.SuccessorList = node.SuccessorList
+	node.NodeInfoLock.RUnlock()
+	return nil
 }
 
 func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
