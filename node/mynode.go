@@ -201,13 +201,16 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 }
 
 func (node *Node) GetPair(key DataPair, reply *StringBoolPair) error {
+	node.NodeInfoLock.RLock()
+	logrus.Infof("getpair in %s with pair %d %d %s", node.Addr, key.Node, key.Key, key.Value)
+	node.NodeInfoLock.RUnlock()
 	reply.Value, reply.Ok = node.SafeGet(key)
 	return nil
 }
 
 func (node *Node) PutPair(pair DataPair, _ *struct{}) error {
 	node.NodeInfoLock.RLock()
-	logrus.Infof("putpair in %s", node.Addr)
+	logrus.Infof("putpair in %s with pair %d %d %s", node.Addr, pair.Node, pair.Key, pair.Value)
 	node.NodeInfoLock.RUnlock()
 	node.SafeWrite(pair)
 	return nil
@@ -288,7 +291,7 @@ func (node *Node) ChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
 	if new_info.Predecessor != "" {
 		node.Predecessor = new_info.Predecessor
 	}
-	if len(new_info.SuccessorList) != 0 {
+	if len(new_info.SuccessorList) != 0 && new_info.SuccessorList[0] != "" {
 		node.SuccessorList = new_info.SuccessorList
 	}
 	node.NodeInfoLock.Unlock()
@@ -372,16 +375,24 @@ func (node *Node) Join(addr string) bool {
 		node.RemoteCall(node_info.Predecessor, "Node.FindClosestPredecessor", target_id, &node_info.Addr)
 	}
 	node.RemoteCall(node_info.Predecessor, "Node.GetNodeInfo", "", &node_info)
+	node_front_info := NodeInfo{
+		SuccessorList: node_info.SuccessorList,
+	}
+	for cursor := 5; cursor > 0; cursor-- {
+		node_front_info.SuccessorList[cursor] = node_info.SuccessorList[cursor-1]
+	}
 	node.NodeInfoLock.Lock()
 	node.Predecessor = node_info.Addr
 	node.SuccessorList = node_info.SuccessorList
+	node_front_info.SuccessorList[0] = node.Addr
 	node.NodeInfoLock.Unlock()
-	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node.Addr, nil)
+	node.RemoteCall(node.Predecessor, "Node.ChangeNodeInfo", node_front_info, nil)
+	node.RemoteCall(node_info.SuccessorList[1], "Node.Notify", node.Addr, nil)
 	node_data := MapIntPair{
 		Map:  make(map[uint64]string),
 		Node: target_id,
 	}
-	node.RemoteCall(node_info.SuccessorList[0], "Node.SplitData", target_id, &node_data)
+	node.RemoteCall(node_info.SuccessorList[1], "Node.SplitData", target_id, &node_data)
 	node.DataLock.Lock()
 	node.Data[node_data.Node] = node_data.Map
 	node.DataLock.Unlock()
@@ -460,9 +471,9 @@ func (node *Node) FindPredecessor(target_id uint64) NodeInfo {
 }
 
 func (node *Node) Get(key string) (bool, string) {
-	logrus.Infof("Get %s", key)
 	target_id := node.FNV1aHash(key)
 	node.NodeInfoLock.RLock()
+	logrus.Infof("Get %s from %s", key, node.Addr)
 	self_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
@@ -470,6 +481,7 @@ func (node *Node) Get(key string) (bool, string) {
 			Node: self_id,
 			Key:  target_id,
 		}
+		logrus.Infof("Get from self %d", self_id)
 		value, ok := node.SafeGet(key)
 		return ok, value
 	}
@@ -505,8 +517,8 @@ func (node *Node) Put(key string, value string) bool {
 	}
 	info := node.FindPredecessor(target_id)
 	target := DataPair{
-		Node: node.FNV1aHash(info.SuccessorList[0]),
-		Key:  target_id,
+		Node:  node.FNV1aHash(info.SuccessorList[0]),
+		Key:   target_id,
 		Value: value,
 	}
 	for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
@@ -654,5 +666,22 @@ func (node *Node) PingSuccessorList() {
 		go func() {
 			node.RemoteCall(current_addr, "Node.PutData", self_data, nil)
 		}()
+	}
+}
+
+// Test functions:
+func (node *Node) CheckRing() {
+	node.NodeInfoLock.RLock()
+	start := node.Addr
+	cursor := NodeInfo{
+		Addr:          node.Addr,
+		SuccessorList: node.SuccessorList,
+	}
+	node.NodeInfoLock.RUnlock()
+	i := 0
+	for i == 0 || cursor.Addr != start {
+		node.RemoteCall(cursor.SuccessorList[0], "Node.GetNodeInfo", "", &cursor)
+		i++
+		logrus.Infof("CheckRing: The %d node is %s", i, cursor.Addr)
 	}
 }
