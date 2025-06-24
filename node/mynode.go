@@ -484,7 +484,6 @@ func (node *Node) Get(key string) (bool, string) {
 func (node *Node) Put(key string, value string) bool {
 	logrus.Infof("Put %s %s", key, value)
 	target_id := node.FNV1aHash(key)
-	flag := false
 	node.NodeInfoLock.RLock()
 	self_id := node.FNV1aHash(node.Addr)
 	self_predecessor := node.FNV1aHash(node.Predecessor)
@@ -497,7 +496,7 @@ func (node *Node) Put(key string, value string) bool {
 		}
 		node.SafeWrite(target)
 		for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
-			node.RemoteCall(node.SuccessorList[cursor], "Node.PutPair", target, &flag)
+			node.RemoteCall(node.SuccessorList[cursor], "Node.PutPair", target, nil)
 		}
 		return true
 	}
@@ -509,7 +508,7 @@ func (node *Node) Put(key string, value string) bool {
 	for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
 		go func() {
-			node.RemoteCall(node.SuccessorList[current_cursor], "Node.PutPair", key_info, &flag)
+			node.RemoteCall(node.SuccessorList[current_cursor], "Node.PutPair", key_info, nil)
 		}()
 	}
 	return true
