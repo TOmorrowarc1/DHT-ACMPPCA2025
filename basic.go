@@ -70,8 +70,6 @@ func basicTest() (bool, int, int) {
 
 		time.Sleep(basicTestAfterJoinQuitSleepTime)
 
-		nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].CheckRing()
-
 		/* Put, part 1. */
 		put1Info := testInfo{
 			msg:       fmt.Sprintf("Put (round %d, part 1)", t),
@@ -129,9 +127,11 @@ func basicTest() (bool, int, int) {
 		cyan.Printf("Start deleting (round %d, part 1)\n", t)
 		for i := 1; i <= basicTestRoundDeleteSize; i++ {
 			for key := range kvMap {
+				logrus.Infof("deletepair %s", key)
 				delete(kvMap, key)
 				success := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Delete(key)
 				if !success {
+					logrus.Infof("Deleted fail on %s", key)
 					delete1Info.fail()
 				} else {
 					delete1Info.success()

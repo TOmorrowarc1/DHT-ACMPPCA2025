@@ -360,6 +360,7 @@ func (node *Node) Stablize() {
 		current_successor.Addr = current_successor.Predecessor
 	}
 	node.RemoteCall(current_successor.Addr, "Node.Notify", current_addr, nil)
+	node.FixSuccessorList()
 }
 
 func (node *Node) FixSuccessorList() {
@@ -596,15 +597,18 @@ func (node *Node) Put(key string, value string) bool {
 		return true
 	}
 	successor := node.FindSuccessor(target_id)
+	var successor_info NodeInfo
+	node.RemoteCall(successor, "Node.GetNodeInfo", "", &successor_info)
 	target := DataPair{
 		Node:  FNV1aHash(successor),
 		Key:   target_id,
 		Value: value,
 	}
-	for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
+	node.RemoteCall(successor_info.Addr, "Node.RPCPutPair", target, nil)
+	for cursor := 0; cursor < 2 && successor_info.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
 		go func() {
-			node.RemoteCall(node.SuccessorList[current_cursor], "Node.RPCPutPair", target, nil)
+			node.RemoteCall(successor_info.SuccessorList[current_cursor], "Node.RPCPutPair", target, nil)
 		}()
 	}
 	return true
@@ -626,21 +630,24 @@ func (node *Node) Delete(key string) bool {
 		delete(node.Data[target.Node], target.Key)
 		node.DataLock.Unlock()
 		for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
-			node.RemoteCall(node.SuccessorList[cursor], "Node.DeletePair", target, &flag)
+			node.RemoteCall(node.SuccessorList[cursor], "Node.RPCDeletePair", target, &flag)
 		}
 		return flag
 	}
 	successor := node.FindSuccessor(target_id)
+	var successor_info NodeInfo
+	node.RemoteCall(successor, "Node.GetNodeInfo", "", &successor_info)
 	key_info := DataPair{
 		Node: FNV1aHash(successor),
 		Key:  target_id,
 	}
-	for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
+	node.RemoteCall(successor_info.Addr, "Node.RPCDeletePair", key_info, &flag)
+	for cursor := 0; cursor < 2 && successor_info.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
 		go func() {
-			node.RemoteCall(node.SuccessorList[current_cursor], "Node.DeletePair", key_info, &flag)
+			node.RemoteCall(successor_info.SuccessorList[current_cursor], "Node.RPCDeletePair", key_info, &flag)
 		}()
-	}
+	} 
 	return flag
 }
 
