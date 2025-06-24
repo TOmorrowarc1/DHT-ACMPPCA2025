@@ -351,10 +351,7 @@ func (node *Node) FindSuccessor(target_id uint64) string {
 // Stablize procotrol.
 func (node *Node) Stablize() {
 	node.NodeInfoLock.RLock()
-	current_node := NodeInfo{
-		Addr:          node.Addr,
-		SuccessorList: node.SuccessorList,
-	}
+	current_addr := node.Addr
 	current_successor := NodeInfo{
 		Addr: node.SuccessorList[0],
 	}
@@ -368,13 +365,13 @@ func (node *Node) Stablize() {
 		node.FixSuccessorList()
 		return
 	}
-	if current_successor.Predecessor != "" && current_successor.Predecessor != current_node.Addr && IsBetween(FNV1aHash(current_node.Addr), FNV1aHash(current_successor.Addr), FNV1aHash(current_successor.Predecessor)) {
+	if current_successor.Predecessor != "" && current_successor.Predecessor != current_addr && IsBetween(FNV1aHash(current_addr), FNV1aHash(current_successor.Addr), FNV1aHash(current_successor.Predecessor)) {
 		node.NodeInfoLock.Lock()
 		node.SuccessorList[0] = current_successor.Predecessor
 		node.NodeInfoLock.Unlock()
 		current_successor.Addr = current_successor.Predecessor
 	}
-	node.RemoteCall(current_successor.Addr, "Node.Notify", current_node.Addr, nil)
+	node.RemoteCall(current_successor.Addr, "Node.Notify", current_addr, nil)
 }
 
 func (node *Node) FixSuccessorList() {
