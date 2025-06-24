@@ -373,13 +373,12 @@ func (node *Node) Join(addr string) bool {
 	node.Predecessor = node_info.Addr
 	node.SuccessorList = node_info.SuccessorList
 	node.NodeInfoLock.Unlock()
-	flag := false
-	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node.Addr, &flag)
+	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node.Addr, nil)
 	node_data := MapIntPair{
 		Map:  make(map[uint64]string),
 		Node: target_id,
 	}
-	node.RemoteCall(node_info.SuccessorList[0], "Node.SplitData", "", &node_data)
+	node.RemoteCall(node_info.SuccessorList[0], "Node.SplitData", target_id, &node_data)
 	node.DataLock.Lock()
 	node.Data[node_data.Node] = node_data.Map
 	node.DataLock.Unlock()
@@ -482,9 +481,9 @@ func (node *Node) Get(key string) (bool, string) {
 }
 
 func (node *Node) Put(key string, value string) bool {
-	logrus.Infof("Put %s %s", key, value)
 	target_id := node.FNV1aHash(key)
 	node.NodeInfoLock.RLock()
+	logrus.Infof("Put %s %s from %s", key, value, node.Addr)
 	self_id := node.FNV1aHash(node.Addr)
 	self_predecessor := node.FNV1aHash(node.Predecessor)
 	node.NodeInfoLock.RUnlock()
@@ -515,10 +514,10 @@ func (node *Node) Put(key string, value string) bool {
 }
 
 func (node *Node) Delete(key string) bool {
-	logrus.Infof("Delete %s", key)
 	target_id := node.FNV1aHash(key)
 	flag := false
 	node.NodeInfoLock.RLock()
+	logrus.Infof("Delete %s from %s", key, node.Addr)
 	self_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
