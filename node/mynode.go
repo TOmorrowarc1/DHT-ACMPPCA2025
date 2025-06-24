@@ -184,7 +184,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 	flag := false
 	node.TableLock.RLock()
 	for i := len(node.FingersTable) - 1; i >= 0 && !flag; i-- {
-		if !node.IsBetween(self_id, node.FNV1aHash(node.FingersTable[i]), target_id) {
+		if node.FingersTable[i] != "" && !node.IsBetween(self_id, node.FNV1aHash(node.FingersTable[i]), target_id) {
 			*reply = node.FingersTable[i]
 			//Check the predecessor we find is online.
 			node.RemoteCall(*reply, "Node.Pong", "", &flag)
@@ -206,6 +206,9 @@ func (node *Node) GetPair(key DataPair, reply *StringBoolPair) error {
 }
 
 func (node *Node) PutPair(pair DataPair, _ *struct{}) error {
+	node.NodeInfoLock.RLock()
+	logrus.Infof("putpair in %s", node.Addr)
+	node.NodeInfoLock.RUnlock()
 	node.SafeWrite(pair)
 	return nil
 }
@@ -483,11 +486,12 @@ func (node *Node) Get(key string) (bool, string) {
 func (node *Node) Put(key string, value string) bool {
 	target_id := node.FNV1aHash(key)
 	node.NodeInfoLock.RLock()
-	logrus.Infof("Put %s %s from %s", key, value, node.Addr)
+	logrus.Infof("Put %s %s from %s, with hash of %d, %d", key, value, node.Addr, node.FNV1aHash(key), node.FNV1aHash(value))
 	self_id := node.FNV1aHash(node.Addr)
 	self_predecessor := node.FNV1aHash(node.Predecessor)
 	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(self_predecessor, self_id, target_id) {
+		logrus.Infof("Put in self")
 		target := DataPair{
 			self_id,
 			target_id,
@@ -500,14 +504,15 @@ func (node *Node) Put(key string, value string) bool {
 		return true
 	}
 	info := node.FindPredecessor(target_id)
-	key_info := DataPair{
+	target := DataPair{
 		Node: node.FNV1aHash(info.SuccessorList[0]),
 		Key:  target_id,
+		Value: value,
 	}
 	for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
 		go func() {
-			node.RemoteCall(node.SuccessorList[current_cursor], "Node.PutPair", key_info, nil)
+			node.RemoteCall(node.SuccessorList[current_cursor], "Node.PutPair", target, nil)
 		}()
 	}
 	return true

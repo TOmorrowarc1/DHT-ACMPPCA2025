@@ -101,6 +101,11 @@ func basicTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
+				if !ok {
+					logrus.Infof("get no pair on pair %s", key)
+				} else {
+					logrus.Infof("wrong pair: %s should be %s", res, value)
+				}
 				get1Info.fail()
 			} else {
 				get1Info.success()
