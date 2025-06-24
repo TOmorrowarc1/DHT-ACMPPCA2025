@@ -141,7 +141,7 @@ func (node *Node) StopRPCServer() {
 // Note: An empty interface can hold values of any type. (https://tour.golang.org/methods/14)
 // Re-connect to the client every time can be slow. You can use connection pool to improve the performance.
 func (node *Node) RemoteCall(addr string, method string, args interface{}, reply interface{}) error {
-	if method != "Node.Pong" {
+	if method != "Node.Pong" && method != "Node.Notify" {
 		logrus.Infof("[%s] RemoteCall %s %s %v", node.Addr, addr, method, args)
 	}
 	// Note: Here we use DialTimeout to set a timeout of 20 milliseconds.
@@ -152,9 +152,6 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 	}
 	client := rpc.NewClient(conn)
 	defer client.Close()
-	if method == "Node.FindClosestPredecessor" {
-		logrus.Infof("Form connection")
-	}
 	err = client.Call(method, args, reply)
 	if err != nil {
 		logrus.Error("RemoteCall error: ", err)
@@ -236,14 +233,14 @@ func (node *Node) DeleteData(pair DataPair, _ *struct{}) error {
 	return nil
 }
 
-func (node *Node) SplitData(pair MapIntPair, _ *struct{}) error {
+func (node *Node) SplitData(target_id uint64, pair *MapIntPair) error {
 	node.NodeInfoLock.RLock()
 	self_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	node.DataLock.Lock()
 	node.Data[pair.Node] = make(map[uint64]string)
 	for key, value := range node.Data[self_id] {
-		if node.IsBetween(pair.Node, self_id, key) {
+		if node.IsBetween(target_id, self_id, key) {
 			pair.Map[key] = value
 			delete(node.Data[self_id], key)
 		}
@@ -465,6 +462,7 @@ func (node *Node) Get(key string) (bool, string) {
 	target_id := node.FNV1aHash(key)
 	node.NodeInfoLock.RLock()
 	self_id := node.FNV1aHash(node.Addr)
+	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
 		key := DataPair{
 			Node: self_id,
@@ -473,7 +471,6 @@ func (node *Node) Get(key string) (bool, string) {
 		value, ok := node.SafeGet(key)
 		return ok, value
 	}
-	node.NodeInfoLock.RUnlock()
 	info := node.FindPredecessor(target_id)
 	key_info := DataPair{
 		Node: node.FNV1aHash(info.SuccessorList[0]),
@@ -491,6 +488,7 @@ func (node *Node) Put(key string, value string) bool {
 	node.NodeInfoLock.RLock()
 	self_id := node.FNV1aHash(node.Addr)
 	self_predecessor := node.FNV1aHash(node.Predecessor)
+	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(self_predecessor, self_id, target_id) {
 		target := DataPair{
 			self_id,
@@ -503,7 +501,6 @@ func (node *Node) Put(key string, value string) bool {
 		}
 		return true
 	}
-	node.NodeInfoLock.RUnlock()
 	info := node.FindPredecessor(target_id)
 	key_info := DataPair{
 		Node: node.FNV1aHash(info.SuccessorList[0]),
@@ -524,6 +521,7 @@ func (node *Node) Delete(key string) bool {
 	flag := false
 	node.NodeInfoLock.RLock()
 	self_id := node.FNV1aHash(node.Addr)
+	node.NodeInfoLock.RUnlock()
 	if node.IsBetween(node.FNV1aHash(node.Predecessor), self_id, target_id) {
 		target := DataPair{
 			Node: self_id,
@@ -537,7 +535,6 @@ func (node *Node) Delete(key string) bool {
 		}
 		return flag
 	}
-	node.NodeInfoLock.RUnlock()
 	info := node.FindPredecessor(target_id)
 	key_info := DataPair{
 		Node: node.FNV1aHash(info.SuccessorList[0]),
@@ -612,7 +609,7 @@ func (node *Node) FixFingers() {
 
 func (node *Node) PingPredecessor() {
 	flag := false
-	if node.RemoteCall(node.Predecessor, "Node.Pong", "", &flag) != nil || !flag {
+	if node.Predecessor == "" || node.RemoteCall(node.Predecessor, "Node.Pong", "", &flag) != nil || !flag {
 		node.Predecessor = ""
 	}
 }
@@ -652,7 +649,7 @@ func (node *Node) PingSuccessorList() {
 	for cursor := 0; cursor < ListSize && current_node.SuccessorList[cursor] != ""; cursor++ {
 		current_addr := current_node.SuccessorList[cursor]
 		go func() {
-			node.RemoteCall(current_addr, "Node.PutData", self_data, &flag)
+			node.RemoteCall(current_addr, "Node.PutData", self_data, nil)
 		}()
 	}
 }
