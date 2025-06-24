@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/sirupsen/logrus"
 	"math/rand"
 	"sync"
 	"time"
@@ -36,6 +37,7 @@ func basicTest() (bool, int, int) {
 	time.Sleep(basicTestAfterRunSleepTime)
 
 	/* Node 0 now creates a new network. */
+	logrus.Infof("node 0 create")
 	nodes[0].Create()
 	nodesInNetwork = append(nodesInNetwork, 0)
 
@@ -52,6 +54,7 @@ func basicTest() (bool, int, int) {
 		}
 		cyan.Printf("Start joining (round %d)\n", t)
 		for j := 1; j <= basicTestRoundJoinNodeSize; j++ {
+			logrus.Infof("Join Node the No.[%d]", j)
 			addr := nodeAddresses[nodesInNetwork[rand.Intn(len(nodesInNetwork))]]
 			if !nodes[nextJoinNode].Join(addr) {
 				joinInfo.fail()

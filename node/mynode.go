@@ -139,7 +139,7 @@ func (node *Node) StopRPCServer() {
 // Note: An empty interface can hold values of any type. (https://tour.golang.org/methods/14)
 // Re-connect to the client every time can be slow. You can use connection pool to improve the performance.
 func (node *Node) RemoteCall(addr string, method string, args interface{}, reply interface{}) error {
-	if method != "Node.Ping" {
+	if method != "Node.Pong" {
 		logrus.Infof("[%s] RemoteCall %s %s %v", node.Addr, addr, method, args)
 	}
 	// Note: Here we use DialTimeout to set a timeout of 20 milliseconds.
