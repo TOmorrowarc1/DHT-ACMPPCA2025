@@ -282,6 +282,7 @@ func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	reply.Addr = node.Addr
 	reply.Predecessor = node.Predecessor
 	reply.SuccessorList = node.SuccessorList
+	logrus.Infof("NodeInfo: %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	return nil
 }
@@ -384,6 +385,7 @@ func (node *Node) Join(addr string) bool {
 	node.NodeInfoLock.Lock()
 	node.Predecessor = node_info.Addr
 	node.SuccessorList = node_info.SuccessorList
+	logrus.Infof("the info in new node is %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node_front_info.SuccessorList[0] = node.Addr
 	node.NodeInfoLock.Unlock()
 	node.RemoteCall(node.Predecessor, "Node.ChangeNodeInfo", node_front_info, nil)

@@ -70,6 +70,8 @@ func basicTest() (bool, int, int) {
 
 		time.Sleep(basicTestAfterJoinQuitSleepTime)
 
+		nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].CheckRing()
+
 		/* Put, part 1. */
 		put1Info := testInfo{
 			msg:       fmt.Sprintf("Put (round %d, part 1)", t),
