@@ -180,7 +180,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 	node.NodeInfoLock.RUnlock()
 	flag := false
 	node.TableLock.RLock()
-	for i := len(node.FingersTable); i >= 0 && !flag; i-- {
+	for i := len(node.FingersTable) - 1; i >= 0 && !flag; i-- {
 		if !node.IsBetween(self_id, node.FNV1aHash(node.FingersTable[i]), target_id) {
 			*reply = node.FingersTable[i]
 			//Check the predecessor we find is online.
