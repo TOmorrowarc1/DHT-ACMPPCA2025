@@ -176,11 +176,13 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 
 func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error {
 	node.NodeInfoLock.RLock()
+	logrus.Infof("Start to findclosestPredecessor on %s", node.Addr)
 	self_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	flag := false
 	node.TableLock.RLock()
 	for i := len(node.FingersTable) - 1; i >= 0 && !flag; i-- {
+		logrus.Infof("circulate to %d", i)
 		if !node.IsBetween(self_id, node.FNV1aHash(node.FingersTable[i]), target_id) {
 			*reply = node.FingersTable[i]
 			//Check the predecessor we find is online.
@@ -193,6 +195,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 		*reply = node.Addr
 		node.NodeInfoLock.RUnlock()
 	}
+	logrus.Infof("One Predecessor %s", *reply)
 	return nil
 }
 
@@ -350,11 +353,11 @@ func (node *Node) Create() {
 }
 
 func (node *Node) Join(addr string) bool {
-	logrus.Infof("Join %s", addr)
 	node_info := NodeInfo{
 		Addr: addr,
 	}
 	node.NodeInfoLock.RLock()
+	logrus.Infof("Join %s through %s", node.Addr, addr)
 	target_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	for node_info.Addr != node_info.Predecessor {
