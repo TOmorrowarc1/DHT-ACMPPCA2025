@@ -319,29 +319,32 @@ func (node *Node) Create() {
 	for i := 0; i < 64; i++ {
 		node.FingersTable[i] = node.Addr
 	}
-	node.NodeInfoLock.Unlock()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Stablize()
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.FixFingers()
+			time.Sleep(10 * time.Second)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingPredecessor()
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingSuccessorList()
+			time.Sleep(10 * time.Second)
 		}
 	}()
 }
@@ -378,24 +381,28 @@ func (node *Node) Join(addr string) bool {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Stablize()
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.FixFingers()
+			time.Sleep(10 * time.Second)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingPredecessor()
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingSuccessorList()
+			time.Sleep(10 * time.Second)
 		}
 	}()
 	return true
