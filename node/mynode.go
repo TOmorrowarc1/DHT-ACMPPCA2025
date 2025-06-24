@@ -26,19 +26,20 @@ const RingSize uint64 = 1<<64 - 1
 const ListSize int = 6
 
 type Node struct {
-	Addr string // address and port number of the node, e.g., "localhost:1234"
-
-	Listener      net.Listener
-	Server        *rpc.Server
+	Addr string
 	Predecessor   string
 	SuccessorList []string
 	NodeInfoLock  sync.RWMutex
+
 	FingersTable  []string
 	TableLock     sync.RWMutex
+
 	Data          map[uint64]map[uint64]string
 	DataLock      sync.RWMutex
 
 	Online uint32
+	Listener      net.Listener
+	Server        *rpc.Server
 	Wait   sync.WaitGroup
 }
 
@@ -79,7 +80,7 @@ func (node *Node) FNV1aHash(key string) uint64 {
 }
 
 func (node *Node) IsBetween(start uint64, end uint64, target uint64) bool {
-	if start > end {
+	if start >= end {
 		return (target <= start || target > end)
 	}
 	return (target > start && target <= end)
@@ -196,7 +197,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 		*reply = node.Addr
 		node.NodeInfoLock.RUnlock()
 	}
-	logrus.Infof("One Predecessor %s", *reply)
+	logrus.Infof("Predecessor on %d for %d is %s", self_id, target_id, *reply)
 	return nil
 }
 
@@ -261,7 +262,8 @@ func (node *Node) MergeData(target_id uint64, node_info *NodeInfo) error {
 	self_id := node.FNV1aHash(node.Addr)
 	node_info.Addr = node.Addr
 	node_info.Predecessor = node.Predecessor
-	node_info.SuccessorList = node.SuccessorList
+	node_info.SuccessorList = make([]string, ListSize)
+	copy(node_info.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	//Merge the data between the target and self into self, which indicates the disappear of nodes.
 	node.DataLock.Lock()
@@ -281,7 +283,8 @@ func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	node.NodeInfoLock.RLock()
 	reply.Addr = node.Addr
 	reply.Predecessor = node.Predecessor
-	reply.SuccessorList = node.SuccessorList
+	reply.SuccessorList = make([]string, ListSize)
+	copy(reply.SuccessorList, node.SuccessorList)
 	logrus.Infof("NodeInfo: %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	return nil
@@ -293,7 +296,7 @@ func (node *Node) ChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
 		node.Predecessor = new_info.Predecessor
 	}
 	if len(new_info.SuccessorList) != 0 && new_info.SuccessorList[0] != "" {
-		node.SuccessorList = new_info.SuccessorList
+		copy(node.SuccessorList, new_info.SuccessorList)
 	}
 	node.NodeInfoLock.Unlock()
 	return nil
@@ -368,7 +371,7 @@ func (node *Node) Join(addr string) bool {
 		Addr: addr,
 	}
 	node.NodeInfoLock.RLock()
-	logrus.Infof("Join %s through %s", node.Addr, addr)
+	logrus.Infof("Join %s, which hash is %d, through %s, which hash is %d", node.Addr, node.FNV1aHash(node.Addr), addr, node.FNV1aHash(addr))
 	target_id := node.FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
 	for node_info.Addr != node_info.Predecessor {
@@ -376,25 +379,26 @@ func (node *Node) Join(addr string) bool {
 		node.RemoteCall(node_info.Predecessor, "Node.FindClosestPredecessor", target_id, &node_info.Addr)
 	}
 	node.RemoteCall(node_info.Predecessor, "Node.GetNodeInfo", "", &node_info)
+	logrus.Infof("1 %v", node_info)
 	node_front_info := NodeInfo{
-		SuccessorList: node_info.SuccessorList,
+		SuccessorList: make([]string, ListSize),
 	}
 	for cursor := 5; cursor > 0; cursor-- {
 		node_front_info.SuccessorList[cursor] = node_info.SuccessorList[cursor-1]
 	}
 	node.NodeInfoLock.Lock()
 	node.Predecessor = node_info.Addr
-	node.SuccessorList = node_info.SuccessorList
+	copy(node.SuccessorList, node_info.SuccessorList)
 	logrus.Infof("the info in new node is %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node_front_info.SuccessorList[0] = node.Addr
 	node.NodeInfoLock.Unlock()
 	node.RemoteCall(node.Predecessor, "Node.ChangeNodeInfo", node_front_info, nil)
-	node.RemoteCall(node_info.SuccessorList[1], "Node.Notify", node.Addr, nil)
+	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node.Addr, nil)
 	node_data := MapIntPair{
 		Map:  make(map[uint64]string),
 		Node: target_id,
 	}
-	node.RemoteCall(node_info.SuccessorList[1], "Node.SplitData", target_id, &node_data)
+	node.RemoteCall(node_info.SuccessorList[0], "Node.SplitData", target_id, &node_data)
 	node.DataLock.Lock()
 	node.Data[node_data.Node] = node_data.Map
 	node.DataLock.Unlock()
@@ -638,6 +642,7 @@ func (node *Node) PingSuccessorList() {
 	var current_successor NodeInfo
 	//Fix the successorlist.
 	node.NodeInfoLock.RLock()
+	current_node.Addr = node.Addr
 	current_node.SuccessorList = node.SuccessorList
 	node.NodeInfoLock.RUnlock()
 	for ; cursor < ListSize && current_node.SuccessorList[cursor] != "" && !flag; cursor++ {
@@ -652,7 +657,6 @@ func (node *Node) PingSuccessorList() {
 			node.SuccessorList[i] = current_successor.SuccessorList[i-1]
 		}
 		current_node.SuccessorList = node.SuccessorList
-		current_node.Addr = node.Addr
 		node.NodeInfoLock.Unlock()
 	}
 	//Push the copies.
