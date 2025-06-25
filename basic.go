@@ -127,7 +127,7 @@ func basicTest() (bool, int, int) {
 		cyan.Printf("Start deleting (round %d, part 1)\n", t)
 		for i := 1; i <= basicTestRoundDeleteSize; i++ {
 			for key := range kvMap {
-				logrus.Infof("deletepair %s", key)
+				logrus.Infof("delete pair %s", key)
 				delete(kvMap, key)
 				success := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Delete(key)
 				if !success {
@@ -136,7 +136,7 @@ func basicTest() (bool, int, int) {
 				} else {
 					delete1Info.success()
 				}
-
+				logrus.Infof("finish delete")
 				break
 			}
 		}

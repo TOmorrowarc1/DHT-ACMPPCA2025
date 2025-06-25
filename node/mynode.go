@@ -106,12 +106,14 @@ func (node *Node) PutPair(pair DataPair) {
 
 func (node *Node) DeletePair(pair DataPair) (string, bool) {
 	node.DataLock.Lock()
-	value, ok := node.GetPair(pair)
-	if ok {
-		delete(node.Data[pair.Node], pair.Key)
+	var value string
+	var exists bool
+	if inner, ok := node.Data[pair.Node]; ok {
+		value, exists = inner[pair.Key]
+		delete(inner, pair.Key)
 	}
 	node.DataLock.Unlock()
-	return value, ok
+	return value, exists
 }
 
 func (node *Node) PutCopy(pair MapIntPair) {
@@ -647,7 +649,7 @@ func (node *Node) Delete(key string) bool {
 		go func() {
 			node.RemoteCall(successor_info.SuccessorList[current_cursor], "Node.RPCDeletePair", key_info, &flag)
 		}()
-	} 
+	}
 	return flag
 }
 
