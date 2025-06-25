@@ -127,10 +127,10 @@ func (node *Node) DeleteCopy(id uint64) bool {
 	return ok
 }
 
-func (node *Node) SplitCopy(start_id uint64, target_id uint64) map[uint64]string {
+func (node *Node) SplitCopy(end_id uint64, target_id uint64) map[uint64]string {
 	var result map[uint64]string = make(map[uint64]string)
 	for key, value := range node.Data[target_id] {
-		if IsBetween(start_id, target_id, key) {
+		if !IsBetween(end_id, target_id, key) {
 			result[key] = value
 			delete(node.Data[target_id], key)
 		}
@@ -141,7 +141,7 @@ func (node *Node) SplitCopy(start_id uint64, target_id uint64) map[uint64]string
 func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 	node.DataLock.Lock()
 	for key, value := range node.Data {
-		if IsBetween(start_id, target_id, key) {
+		if IsBetween(start_id, target_id, key) && key != target_id {
 			for key_in, value_in := range value {
 				node.Data[target_id][key_in] = value_in
 			}
@@ -246,7 +246,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 		node.TableLock.RLock()
 		finger := node.FingersTable[i]
 		node.TableLock.RUnlock()
-		if finger != "" && !IsBetween(self_id, FNV1aHash(finger), target_id) {
+		if finger != "" && IsBetween(self_id, target_id, FNV1aHash(finger)) && FNV1aHash(finger) != target_id {
 			*reply = finger
 			//Check the predecessor we find is online.
 			node.RemoteCall(finger, "Node.Pong", "", &flag)
@@ -254,7 +254,11 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 	}
 	if !flag {
 		node.NodeInfoLock.RLock()
-		*reply = node.Addr
+		if IsBetween(self_id, target_id, FNV1aHash(node.SuccessorList[0])) {
+			*reply = node.SuccessorList[0]
+		} else {
+			*reply = node.Addr
+		}
 		node.NodeInfoLock.RUnlock()
 	}
 	logrus.Infof("Predecessor on %d for %d is %s", self_id, target_id, *reply)
@@ -317,18 +321,18 @@ func (node *Node) RPCMergeCopy(start_id uint64, _ *struct{}) error {
 
 // Routing methods.
 func (node *Node) FindPredecessor(target_id uint64) NodeInfo {
-	var cursor_back string
-	var content NodeInfo
+	var cursor NodeInfo
 	node.NodeInfoLock.RLock()
-	cursor_front := node.Addr
+	cursor.Addr = node.Addr
+	cursor.SuccessorList = make([]string, ListSize)
+	copy(cursor.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
-	for cursor_front != cursor_back {
-		cursor_back = cursor_front
-		node.RemoteCall(cursor_back, "Node.FindClosestPredecessor", target_id, &cursor_front)
+	for !IsBetween(FNV1aHash(cursor.Addr), FNV1aHash(cursor.SuccessorList[0]), target_id) {
+		node.RemoteCall(cursor.Addr, "Node.FindClosestPredecessor", target_id, &cursor.Addr)
+		node.RemoteCall(cursor.Addr, "Node.GetNodeInfo", "", &cursor)
 	}
-	node.RemoteCall(cursor_front, "Node.GetNodeInfo", "", &content)
-	logrus.Infof("Predecessor for %d is %v", target_id, content)
-	return content
+	logrus.Infof("Predecessor for %d is %v", target_id, cursor)
+	return cursor
 }
 func (node *Node) FindSuccessor(target_id uint64) string {
 	predecessor := node.FindPredecessor(target_id)
@@ -385,7 +389,7 @@ func (node *Node) FixSuccessorList() {
 	node.RemoteCall(current_node.SuccessorList[cursor], "Node.GetNodeInfo", "", &current_successor)
 	node.NodeInfoLock.Lock()
 	node.SuccessorList[0] = current_node.SuccessorList[cursor]
-	for i := 1; i < ListSize; i++ {
+	for i := 1; i < ListSize && current_successor.SuccessorList[i-1] != ""; i++ {
 		node.SuccessorList[i] = current_successor.SuccessorList[i-1]
 	}
 	node.NodeInfoLock.Unlock()
@@ -397,16 +401,19 @@ func (node *Node) PushCopies() {
 	current_node.Addr = node.Addr
 	current_node.SuccessorList = node.SuccessorList
 	node.NodeInfoLock.RUnlock()
-	self_id := FNV1aHash(current_node.Addr)
 	node.DataLock.RLock()
+	self_id := FNV1aHash(current_node.Addr)
+	logrus.Infof("The map in %s is %v", current_node.Addr, node.Data[self_id])
 	self_data := MapIntPair{
+		Map:  make(map[uint64]string),
 		Node: self_id,
 	}
 	for k, v := range node.Data[self_id] {
 		self_data.Map[k] = v
 	}
+	logrus.Infof("The copy is %v", self_data)
 	node.DataLock.RUnlock()
-	for cursor := 0; cursor < ListSize && current_node.SuccessorList[cursor] != ""; cursor++ {
+	for cursor := 0; cursor < ListSize && current_node.SuccessorList[cursor] != "" && current_node.SuccessorList[cursor] != current_node.Addr; cursor++ {
 		current_addr := current_node.SuccessorList[cursor]
 		go func(addr string, pair MapIntPair) {
 			node.RemoteCall(addr, "Node.RPCPutCopy", pair, nil)
@@ -454,7 +461,7 @@ func (node *Node) Run() {
 }
 
 func (node *Node) BackGroundStart() {
-	node.Wait.Add(4)
+	node.Wait.Add(3)
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
@@ -476,13 +483,13 @@ func (node *Node) BackGroundStart() {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
-	go func() {
+	/*go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PushCopies()
 			time.Sleep(1 * time.Second)
 		}
-	}()
+	}()*/
 }
 
 func (node *Node) Create() {
@@ -516,6 +523,11 @@ func (node *Node) Join(addr string) bool {
 	logrus.Infof("the info in new node is %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.Unlock()
 	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node_info.Addr, nil)
+	node.TableLock.Lock()
+	for cursor := 0; cursor < 64; cursor++ {
+		node.FingersTable[cursor] = node_info.SuccessorList[0]
+	}
+	node.TableLock.Unlock()
 	node_data := MapIntPair{
 		Map:  make(map[uint64]string),
 		Node: target_id,
@@ -655,6 +667,7 @@ func (node *Node) Delete(key string) bool {
 	node.RemoteCall(successor_info.Addr, "Node.RPCDeletePair", key_info, &flag)
 	for cursor := 0; cursor < 2 && successor_info.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
+		var flag bool
 		go func(addr string, pair DataPair) {
 			node.RemoteCall(addr, "Node.RPCDeletePair", pair, &flag)
 		}(successor_info.SuccessorList[current_cursor], key_info)
@@ -668,8 +681,9 @@ func (node *Node) CheckRing() {
 	start := node.Addr
 	cursor := NodeInfo{
 		Addr:          node.Addr,
-		SuccessorList: node.SuccessorList,
+		SuccessorList: make([]string, ListSize),
 	}
+	copy(cursor.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	i := 0
 	for i == 0 || cursor.Addr != start {
