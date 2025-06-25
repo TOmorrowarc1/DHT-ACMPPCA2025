@@ -184,7 +184,7 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 		logrus.Infof("[%s] RemoteCall %s %s %v", node.Addr, addr, method, args)
 	}
 	// Note: Here we use DialTimeout to set a timeout of 20 milliseconds.
-	conn, err := net.DialTimeout("tcp", addr, 20*time.Millisecond)
+	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
 	if err != nil {
 		logrus.Error("dialing: ", err)
 		return err
@@ -414,10 +414,7 @@ func (node *Node) PushCopies() {
 	logrus.Infof("The copy is %v", self_data)
 	node.DataLock.RUnlock()
 	for cursor := 0; cursor < ListSize && current_node.SuccessorList[cursor] != "" && current_node.SuccessorList[cursor] != current_node.Addr; cursor++ {
-		current_addr := current_node.SuccessorList[cursor]
-		go func(addr string, pair MapIntPair) {
-			node.RemoteCall(addr, "Node.RPCPutCopy", pair, nil)
-		}(current_addr, self_data)
+		node.RemoteCall(current_node.SuccessorList[cursor], "Node.RPCPutCopy", self_data, nil)
 	}
 }
 
@@ -555,7 +552,7 @@ func (node *Node) Quit() {
 		}
 		node.NodeInfoLock.RUnlock()
 		node.PushCopies()
-		node.RemoteCall(current_predecessor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_node), nil)
+		node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_node), nil)
 		node.RemoteCall(current_predecessor.Addr, "Node.ChangeNodeInfo", current_predecessor, nil)
 		node.RemoteCall(current_successor.Addr, "Node.ChangeNodeInfo", current_successor, nil)
 		atomic.StoreUint32(&node.Online, 0)
