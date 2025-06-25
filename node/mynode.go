@@ -642,35 +642,42 @@ func (node *Node) Delete(key string) bool {
 	flag := false
 	node.NodeInfoLock.RLock()
 	logrus.Infof("Delete %s from %s", key, node.Addr)
-	self_id := FNV1aHash(node.Addr)
+	current_node := NodeInfo{
+		Addr:          node.Addr,
+		SuccessorList: make([]string, ListSize),
+	}
+	copy(current_node.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
+	self_id := FNV1aHash(current_node.Addr)
 	if IsBetween(FNV1aHash(node.Predecessor), self_id, target_id) {
 		target := DataPair{
 			Node: self_id,
 			Key:  target_id,
 		}
-		node.DataLock.Lock()
-		delete(node.Data[target.Node], target.Key)
-		node.DataLock.Unlock()
+		_, flag := node.DeletePair(target)
 		for cursor := 0; cursor < 2 && node.SuccessorList[cursor] != ""; cursor++ {
-			node.RemoteCall(node.SuccessorList[cursor], "Node.RPCDeletePair", target, &flag)
+			current_cursor := cursor
+			var flag bool
+			go func(addr string, pair DataPair) {
+				node.RemoteCall(addr, "Node.RPCDeletePair", pair, &flag)
+			}(current_node.SuccessorList[current_cursor], target)
 		}
 		return flag
 	}
 	successor := node.FindSuccessor(target_id)
 	var successor_info NodeInfo
 	node.RemoteCall(successor, "Node.GetNodeInfo", "", &successor_info)
-	key_info := DataPair{
+	target := DataPair{
 		Node: FNV1aHash(successor),
 		Key:  target_id,
 	}
-	node.RemoteCall(successor_info.Addr, "Node.RPCDeletePair", key_info, &flag)
+	node.RemoteCall(successor_info.Addr, "Node.RPCDeletePair", target, &flag)
 	for cursor := 0; cursor < 2 && successor_info.SuccessorList[cursor] != ""; cursor++ {
 		current_cursor := cursor
 		var flag bool
 		go func(addr string, pair DataPair) {
 			node.RemoteCall(addr, "Node.RPCDeletePair", pair, &flag)
-		}(successor_info.SuccessorList[current_cursor], key_info)
+		}(successor_info.SuccessorList[current_cursor], target)
 	}
 	return flag
 }
