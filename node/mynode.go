@@ -239,17 +239,23 @@ func (node *Node) RPCPong(_ string, flag *bool) error {
 func (node *Node) RPCFindClosestPredecessor(target_id uint64, reply *string) error {
 	node.NodeInfoLock.RLock()
 	self_id := FNV1aHash(node.Addr)
+	*reply = node.Addr
 	node.NodeInfoLock.RUnlock()
 	flag := false
 	for i := len(node.FingersTable) - 1; i >= 0 && !flag; i-- {
 		node.TableLock.RLock()
 		finger := node.FingersTable[i]
 		node.TableLock.RUnlock()
-		if finger != "" && IsBetween(self_id, target_id, FNV1aHash(finger)) && FNV1aHash(finger) != target_id {
-			*reply = finger
-			//Check the predecessor we find is online.
-			node.RemoteCall(finger, "Node.RPCPong", "", &flag)
-			if !flag {
+		if finger == "" {
+			continue
+		}
+		if IsBetween(self_id, target_id, FNV1aHash(finger)) && FNV1aHash(finger) != target_id {
+			alive := false
+			node.RemoteCall(finger, "Node.RPCPong", "", &alive)
+			if alive {
+				*reply = finger
+				flag = true
+			} else {
 				node.TableLock.Lock()
 				node.FingersTable[i] = ""
 				node.TableLock.Unlock()
@@ -260,8 +266,6 @@ func (node *Node) RPCFindClosestPredecessor(target_id uint64, reply *string) err
 		node.NodeInfoLock.RLock()
 		if IsBetween(self_id, target_id, FNV1aHash(node.SuccessorList[0])) {
 			*reply = node.SuccessorList[0]
-		} else {
-			*reply = node.Addr
 		}
 		node.NodeInfoLock.RUnlock()
 	}
@@ -515,13 +519,15 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Stablize()
-			time.Sleep(300 * time.Millisecond)
+			logrus.Infof("stablize")
+			time.Sleep(200 * time.Millisecond)
 		}
 	}()
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.FixFingers()
+			logrus.Infof("Fixfingers")
 			time.Sleep(10 * time.Second)
 		}
 	}()
@@ -529,6 +535,7 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingPredecessor()
+			logrus.Infof("PingPre")
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
@@ -536,6 +543,7 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PushCopies()
+			logrus.Infof("pushcopies")
 			time.Sleep(1 * time.Second)
 		}
 	}()
@@ -543,6 +551,7 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.CheckCopies()
+			logrus.Infof("checkcopies")
 			time.Sleep(2 * time.Second)
 		}
 	}()
@@ -600,7 +609,6 @@ func (node *Node) Quit() {
 	if atomic.LoadUint32(&node.Online) == 0 {
 		return
 	}
-	logrus.Infof("Quit %s", node.Addr)
 	atomic.StoreUint32(&node.Online, 0)
 	node.Wait.Wait()
 	node.NodeInfoLock.RLock()
@@ -614,6 +622,7 @@ func (node *Node) Quit() {
 		Addr:        node.SuccessorList[0],
 		Predecessor: node.Predecessor,
 	}
+	logrus.Infof("Quit %s: %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	if current_addr != current_successor.Addr {
 		node.PushCopies()
