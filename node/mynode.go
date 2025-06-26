@@ -342,11 +342,11 @@ func (node *Node) ErrFindPredecessor(target_id uint64) (NodeInfo, error) {
 	copy(cursor.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	for !IsBetween(FNV1aHash(cursor.Addr), FNV1aHash(cursor.SuccessorList[0]), target_id) {
-		node.RemoteCall(cursor.Addr, "Node.RPCFindClosestPredecessor", target_id, &cursor.Addr)
-		err := node.RemoteCall(cursor.Addr, "Node.RPCGetNodeInfo", "", &cursor)
+		err := node.RemoteCall(cursor.Addr, "Node.RPCFindClosestPredecessor", target_id, &cursor.Addr)
 		if err != nil {
 			return cursor, err
 		}
+		node.RemoteCall(cursor.Addr, "Node.RPCGetNodeInfo", "", &cursor)
 	}
 	logrus.Infof("Predecessor for %d is %v", target_id, cursor)
 	return cursor, nil
