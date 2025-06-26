@@ -23,7 +23,7 @@ func init() {
 }
 
 const RingSize uint64 = 1<<64 - 1
-const ListSize int = 6
+const ListSize int = 3
 
 type Node struct {
 	Addr          string
@@ -181,7 +181,7 @@ func (node *Node) StopRPCServer() {
 
 // Re-connect to the client every time can be slow. You can use connection pool to improve the performance.
 func (node *Node) RemoteCall(addr string, method string, args interface{}, reply interface{}) error {
-	if method != "Node.Pong" && method != "Node.Notify" {
+	if method != "Node.Pong" && method != "Node.Notify" && method != "Node.RPCPutCopy" {
 		logrus.Infof("[%s] RemoteCall %s %s %v", node.Addr, addr, method, args)
 	}
 	// Note: Here we use DialTimeout to set a timeout of 20 milliseconds.
@@ -241,6 +241,7 @@ func (node *Node) Pong(_ string, flag *bool) error {
 func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error {
 	node.NodeInfoLock.RLock()
 	self_id := FNV1aHash(node.Addr)
+	successor := node.SuccessorList[0]
 	node.NodeInfoLock.RUnlock()
 	flag := false
 	for i := len(node.FingersTable) - 1; i >= 0 && !flag; i-- {
@@ -251,6 +252,11 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 			*reply = finger
 			//Check the predecessor we find is online.
 			node.RemoteCall(finger, "Node.Pong", "", &flag)
+			if !flag {
+				node.TableLock.Lock()
+				node.FingersTable[i] = successor
+				node.TableLock.Unlock()
+			}
 		}
 	}
 	if !flag {
@@ -360,7 +366,7 @@ func (node *Node) Stablize() {
 	}
 	if current_successor.Predecessor != "" && current_successor.Predecessor != current_addr && IsBetween(FNV1aHash(current_addr), FNV1aHash(current_successor.Addr), FNV1aHash(current_successor.Predecessor)) {
 		node.NodeInfoLock.Lock()
-		for cursor := 5; cursor > 0; cursor-- {
+		for cursor := ListSize - 1; cursor > 0; cursor-- {
 			node.SuccessorList[cursor] = node.SuccessorList[cursor-1]
 		}
 		node.SuccessorList[0] = current_successor.Predecessor
@@ -419,6 +425,42 @@ func (node *Node) PushCopies() {
 	}
 }
 
+func (node *Node) CheckCopies() {
+	var keylist []uint64
+	var predecessorlist []uint64
+	node.NodeInfoLock.RLock()
+	self_addr := node.Addr
+	current_predecessor := NodeInfo{
+		Addr: node.Predecessor,
+	}
+	node.NodeInfoLock.RUnlock()
+	node.DataLock.Lock()
+	for key := range node.Data {
+		keylist = append(keylist, key)
+	}
+	node.DataLock.Unlock()
+	for i := 0; i < ListSize && current_predecessor.Addr != self_addr; i++ {
+		predecessorlist = append(predecessorlist, FNV1aHash(current_predecessor.Addr))
+		node.RemoteCall(current_predecessor.Addr, "Node.GetNodeInfo", "", &current_predecessor)
+		current_predecessor.Addr = current_predecessor.Predecessor
+	}
+	self_id := FNV1aHash(self_addr)
+	for _, key_id := range keylist {
+		flag := false
+		for _, predecessor := range predecessorlist {
+			if key_id == predecessor {
+				flag = true
+				break
+			}
+		}
+		if key_id != self_id && !flag {
+			node.DataLock.Lock()
+			delete(node.Data, key_id)
+			node.DataLock.Unlock()
+		}
+	}
+}
+
 func (node *Node) FixFingers() {
 	var addr string
 	node.NodeInfoLock.RLock()
@@ -459,7 +501,7 @@ func (node *Node) Run() {
 }
 
 func (node *Node) BackGroundStart() {
-	node.Wait.Add(3)
+	node.Wait.Add(5)
 	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
@@ -481,13 +523,20 @@ func (node *Node) BackGroundStart() {
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
-	/*go func() {
+	go func() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PushCopies()
 			time.Sleep(1 * time.Second)
 		}
-	}()*/
+	}()
+	go func() {
+		defer node.Wait.Done()
+		for atomic.LoadUint32(&node.Online) == 1 {
+			node.CheckCopies()
+			time.Sleep(2 * time.Second)
+		}
+	}()
 }
 
 func (node *Node) Create() {
@@ -539,34 +588,35 @@ func (node *Node) Join(addr string) bool {
 }
 
 func (node *Node) Quit() {
-	if atomic.LoadUint32(&node.Online) == 1 {
-		logrus.Infof("Quit %s", node.Addr)
-		node.NodeInfoLock.RLock()
-		current_predecessor := NodeInfo{
-			Addr:          node.Predecessor,
-			SuccessorList: node.SuccessorList,
-		}
-		current_successor := NodeInfo{
-			Addr:        node.SuccessorList[0],
-			Predecessor: node.Predecessor,
-		}
-		node.NodeInfoLock.RUnlock()
-		node.PushCopies()
-		node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_predecessor.Addr), nil)
-		node.RemoteCall(current_predecessor.Addr, "Node.ChangeNodeInfo", current_predecessor, nil)
-		node.RemoteCall(current_successor.Addr, "Node.ChangeNodeInfo", current_successor, nil)
-		atomic.StoreUint32(&node.Online, 0)
-		node.StopRPCServer()
-		node.Wait.Wait()
+	if atomic.LoadUint32(&node.Online) == 0 {
+		return
 	}
+	logrus.Infof("Quit %s", node.Addr)
+	atomic.StoreUint32(&node.Online, 0)
+	node.Wait.Wait()
+	node.NodeInfoLock.RLock()
+	current_predecessor := NodeInfo{
+		Addr:          node.Predecessor,
+		SuccessorList: node.SuccessorList,
+	}
+	current_successor := NodeInfo{
+		Addr:        node.SuccessorList[0],
+		Predecessor: node.Predecessor,
+	}
+	node.NodeInfoLock.RUnlock()
+	node.PushCopies()
+	node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_predecessor.Addr), nil)
+	node.RemoteCall(current_predecessor.Addr, "Node.ChangeNodeInfo", current_predecessor, nil)
+	node.RemoteCall(current_successor.Addr, "Node.ChangeNodeInfo", current_successor, nil)
+	node.StopRPCServer()
 }
 
 func (node *Node) ForceQuit() {
 	if atomic.LoadUint32(&node.Online) == 1 {
 		logrus.Info("ForceQuit")
 		atomic.StoreUint32(&node.Online, 0)
-		node.StopRPCServer()
 		node.Wait.Wait()
+		node.StopRPCServer()
 	}
 }
 
