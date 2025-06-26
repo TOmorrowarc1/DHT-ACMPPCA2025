@@ -36,8 +36,5 @@ type dhtNode interface {
 	// Return "true" if success, "false" otherwise.
 	Delete(key string) bool
 
-	//Test functions
-	CheckRing()
-	
 	PrintInfo()
 }

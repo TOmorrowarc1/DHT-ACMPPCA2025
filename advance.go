@@ -60,8 +60,7 @@ func forceQuitTest() (bool, int, int) {
 	joinInfo.finish(&forceQuitFailedCnt, &forceQuitTotalCnt)
 
 	time.Sleep(forceQuitAfterJoinSleepTime)
-	nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].CheckRing()
-
+	
 	/* Put. */
 	putInfo := testInfo{
 		msg:       "Force quit put",
