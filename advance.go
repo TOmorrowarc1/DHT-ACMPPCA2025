@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+
+	"github.com/sirupsen/logrus"
 )
 
 func forceQuitTest() (bool, int, int) {
@@ -58,6 +60,7 @@ func forceQuitTest() (bool, int, int) {
 	joinInfo.finish(&forceQuitFailedCnt, &forceQuitTotalCnt)
 
 	time.Sleep(forceQuitAfterJoinSleepTime)
+	nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].CheckRing()
 
 	/* Put. */
 	putInfo := testInfo{
@@ -93,7 +96,9 @@ func forceQuitTest() (bool, int, int) {
 
 			time.Sleep(forceQuitFQSleepTime)
 		}
-
+		for _, node := range nodes {
+			node.PrintInfo()
+		}
 		/* Get all data. */
 		getInfo := testInfo{
 			msg:       fmt.Sprintf("Get (round %d)", t),
@@ -104,6 +109,11 @@ func forceQuitTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
+				if !ok {
+					logrus.Infof("get no pair on %s", key)
+				} else {
+					logrus.Infof("wrong pair on %s", key)
+				}
 				getInfo.fail()
 			} else {
 				getInfo.success()

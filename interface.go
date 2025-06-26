@@ -38,4 +38,6 @@ type dhtNode interface {
 
 	//Test functions
 	CheckRing()
+	
+	PrintInfo()
 }
