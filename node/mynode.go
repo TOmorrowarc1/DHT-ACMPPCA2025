@@ -140,13 +140,17 @@ func (node *Node) SplitCopy(end_id uint64, target_id uint64) map[uint64]string {
 
 func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 	node.DataLock.Lock()
+	keys_remove := make([]uint64, 0)
 	for key, value := range node.Data {
 		if IsBetween(start_id, target_id, key) && key != target_id {
 			for key_in, value_in := range value {
 				node.Data[target_id][key_in] = value_in
 			}
-			delete(node.Data, key)
+			keys_remove = append(keys_remove, key)
 		}
+	}
+	for _, key := range keys_remove {
+		delete(node.Data, key)
 	}
 	logrus.Infof("Aftermerge we get %v", node.Data[target_id])
 	node.DataLock.Unlock()
