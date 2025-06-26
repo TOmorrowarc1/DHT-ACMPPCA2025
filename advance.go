@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/sirupsen/logrus"
 )
 
 func forceQuitTest() (bool, int, int) {
@@ -89,17 +88,13 @@ func forceQuitTest() (bool, int, int) {
 		cyan.Printf("Start force quitting (round %d)\n", t)
 		for i := 1; i <= forceQuitRoundQuitNodeSize; i++ {
 			idxInArray := rand.Intn(len(nodesInNetwork))
-			logrus.Infof("Force Quit:")
-			nodes[nodesInNetwork[idxInArray]].PrintInfo()
+
 			nodes[nodesInNetwork[idxInArray]].ForceQuit()
 			nodesInNetwork = removeFromArray(nodesInNetwork, idxInArray)
 
 			time.Sleep(forceQuitFQSleepTime)
 		}
-		logrus.Infof("Round %d CheckRing", t)
-		for _, i := range nodesInNetwork {
-			nodes[i].PrintInfo()
-		}
+
 		/* Get all data. */
 		getInfo := testInfo{
 			msg:       fmt.Sprintf("Get (round %d)", t),
@@ -110,11 +105,6 @@ func forceQuitTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
-				if !ok {
-					logrus.Infof("get no pair on %s", key)
-				} else {
-					logrus.Infof("wrong pair on %s", key)
-				}
 				getInfo.fail()
 			} else {
 				getInfo.success()
@@ -223,11 +213,6 @@ func quitAndStabilizeTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
-				if !ok {
-					logrus.Infof("get no pair on %s", key)
-				} else {
-					logrus.Infof("wrong pair on %s", key)
-				}
 				getInfo.fail()
 			} else {
 				getInfo.success()
