@@ -505,7 +505,7 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Stablize()
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 	}()
 	go func() {
@@ -611,12 +611,12 @@ func (node *Node) Quit() {
 }
 
 func (node *Node) ForceQuit() {
-	if atomic.LoadUint32(&node.Online) == 1 {
-		logrus.Info("ForceQuit")
-		atomic.StoreUint32(&node.Online, 0)
-		node.Wait.Wait()
-		node.StopRPCServer()
+	if atomic.LoadUint32(&node.Online) == 0 {
+		return
 	}
+	atomic.StoreUint32(&node.Online, 0)
+	node.Wait.Wait()
+	node.StopRPCServer()
 }
 
 // DHT methods
@@ -749,5 +749,5 @@ func (node *Node) CheckRing() {
 func (node *Node) PrintInfo() {
 	node.NodeInfoLock.RLock()
 	logrus.Infof("The node is %s, with predecessor %s, successor %s", node.Addr, node.Predecessor, node.SuccessorList[0])
-	node.NodeInfoLock.Unlock()
+	node.NodeInfoLock.RUnlock()
 }
