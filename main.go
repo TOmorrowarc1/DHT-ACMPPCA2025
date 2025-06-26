@@ -19,7 +19,7 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance" && testName != "all") {
+	if help || (testName != "basic" && testName != "advance1" && testName != "advance2" && testName != "all") {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -57,7 +57,7 @@ func main() {
 		}
 		time.Sleep(afterTestSleepTime)
 		fallthrough
-	case "advance":
+	case "advance1":
 		yellow.Println("Advance Test Begins:")
 
 		/* ------ Force Quit Test Begins ------ */
@@ -73,9 +73,9 @@ func main() {
 		} else {
 			green.Printf("Force quit test passed with fail rate %.4f\n\n", forceQuitFailRate)
 		}
-		time.Sleep(afterTestSleepTime)
+		//time.Sleep(afterTestSleepTime)
 		/* ------ Force Quit Test Ends ------ */
-
+	case "advance2":
 		/* ------ Quit & Stabilize Test Begins ------ */
 		QASPanicked, QASFailedCnt, QASTotalCnt := quitAndStabilizeTest()
 		if QASPanicked {

@@ -96,9 +96,6 @@ func forceQuitTest() (bool, int, int) {
 
 			time.Sleep(forceQuitFQSleepTime)
 		}
-		for _, node := range nodes {
-			node.PrintInfo()
-		}
 		/* Get all data. */
 		getInfo := testInfo{
 			msg:       fmt.Sprintf("Get (round %d)", t),
