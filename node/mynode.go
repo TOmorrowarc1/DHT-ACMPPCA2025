@@ -138,10 +138,10 @@ func (node *Node) SplitCopy(end_id uint64, target_id uint64) map[uint64]string {
 	return result
 }
 
-func (node *Node) MergeCopy(end_id uint64, target_id uint64) {
+func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 	node.DataLock.Lock()
 	for key, value := range node.Data {
-		if !IsBetween(end_id, target_id, key) && key != target_id {
+		if IsBetween(start_id, target_id, key) && key != target_id {
 			for key_in, value_in := range value {
 				node.Data[target_id][key_in] = value_in
 			}
@@ -542,7 +542,6 @@ func (node *Node) Quit() {
 	if atomic.LoadUint32(&node.Online) == 1 {
 		logrus.Infof("Quit %s", node.Addr)
 		node.NodeInfoLock.RLock()
-		current_node := node.Addr
 		current_predecessor := NodeInfo{
 			Addr:          node.Predecessor,
 			SuccessorList: node.SuccessorList,
@@ -553,7 +552,7 @@ func (node *Node) Quit() {
 		}
 		node.NodeInfoLock.RUnlock()
 		node.PushCopies()
-		node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_node), nil)
+		node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_predecessor.Addr), nil)
 		node.RemoteCall(current_predecessor.Addr, "Node.ChangeNodeInfo", current_predecessor, nil)
 		node.RemoteCall(current_successor.Addr, "Node.ChangeNodeInfo", current_successor, nil)
 		atomic.StoreUint32(&node.Online, 0)
