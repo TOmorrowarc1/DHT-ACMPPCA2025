@@ -148,6 +148,7 @@ func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 			delete(node.Data, key)
 		}
 	}
+	logrus.Infof("Aftermerge we get %v", node.Data[target_id])
 	node.DataLock.Unlock()
 }
 
@@ -348,7 +349,10 @@ func (node *Node) ErrFindPredecessor(target_id uint64) (NodeInfo, error) {
 		if err != nil {
 			return cursor, err
 		}
-		node.RemoteCall(cursor.Addr, "Node.RPCGetNodeInfo", "", &cursor)
+		err = node.RemoteCall(cursor.Addr, "Node.RPCGetNodeInfo", "", &cursor)
+		if err != nil {
+			return cursor, err
+		}
 	}
 	logrus.Infof("Predecessor for %d is %v", target_id, cursor)
 	return cursor, nil
@@ -519,7 +523,9 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Stablize()
-			logrus.Infof("stablize")
+			node.NodeInfoLock.RLock()
+			logrus.Infof("stablize of node %s, %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
+			node.NodeInfoLock.RUnlock()
 			time.Sleep(200 * time.Millisecond)
 		}
 	}()
@@ -527,7 +533,9 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.FixFingers()
-			logrus.Infof("Fixfingers")
+			node.NodeInfoLock.RLock()
+			logrus.Infof("Fixfingers of node %s, %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
+			node.NodeInfoLock.RUnlock()
 			time.Sleep(10 * time.Second)
 		}
 	}()
@@ -535,7 +543,9 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PingPredecessor()
-			logrus.Infof("PingPre")
+			node.NodeInfoLock.RLock()
+			logrus.Infof("Pingpre of node %s, %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
+			node.NodeInfoLock.RUnlock()
 			time.Sleep(500 * time.Millisecond)
 		}
 	}()
@@ -543,7 +553,9 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.PushCopies()
-			logrus.Infof("pushcopies")
+			node.NodeInfoLock.RLock()
+			logrus.Infof("pushcopies of node %s, %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
+			node.NodeInfoLock.RUnlock()
 			time.Sleep(1 * time.Second)
 		}
 	}()
@@ -551,7 +563,9 @@ func (node *Node) BackGroundStart() {
 		defer node.Wait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.CheckCopies()
-			logrus.Infof("checkcopies")
+			node.NodeInfoLock.RLock()
+			logrus.Infof("checkcopies of node %s, %s,%v", node.Addr, node.Predecessor, node.SuccessorList)
+			node.NodeInfoLock.RUnlock()
 			time.Sleep(2 * time.Second)
 		}
 	}()
@@ -626,6 +640,9 @@ func (node *Node) Quit() {
 	node.NodeInfoLock.RUnlock()
 	if current_addr != current_successor.Addr {
 		node.PushCopies()
+		node.DataLock.RLock()
+		logrus.Infof("We push the copy %s, %v",current_addr,node.Data[FNV1aHash(current_addr)])
+		node.DataLock.RUnlock()
 		node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_predecessor.Addr), nil)
 		node.RemoteCall(current_predecessor.Addr, "Node.RPCChangeNodeInfo", current_predecessor, nil)
 		node.RemoteCall(current_successor.Addr, "Node.RPCChangeNodeInfo", current_successor, nil)
