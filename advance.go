@@ -60,7 +60,7 @@ func forceQuitTest() (bool, int, int) {
 	joinInfo.finish(&forceQuitFailedCnt, &forceQuitTotalCnt)
 
 	time.Sleep(forceQuitAfterJoinSleepTime)
-	
+
 	/* Put. */
 	putInfo := testInfo{
 		msg:       "Force quit put",
@@ -89,11 +89,16 @@ func forceQuitTest() (bool, int, int) {
 		cyan.Printf("Start force quitting (round %d)\n", t)
 		for i := 1; i <= forceQuitRoundQuitNodeSize; i++ {
 			idxInArray := rand.Intn(len(nodesInNetwork))
-
+			logrus.Infof("Force Quit:")
+			nodes[nodesInNetwork[idxInArray]].PrintInfo()
 			nodes[nodesInNetwork[idxInArray]].ForceQuit()
 			nodesInNetwork = removeFromArray(nodesInNetwork, idxInArray)
 
 			time.Sleep(forceQuitFQSleepTime)
+		}
+		logrus.Infof("Round %d CheckRing", t)
+		for _, i := range nodesInNetwork {
+			nodes[i].PrintInfo()
 		}
 		/* Get all data. */
 		getInfo := testInfo{
