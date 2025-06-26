@@ -181,7 +181,7 @@ func (node *Node) StopRPCServer() {
 
 // Re-connect to the client every time can be slow. You can use connection pool to improve the performance.
 func (node *Node) RemoteCall(addr string, method string, args interface{}, reply interface{}) error {
-	if method != "Node.Pong" && method != "Node.Notify" {
+	if method != "Node.RPCPong" && method != "Node.RPCNotify" {
 		logrus.Infof("[%s] RemoteCall %s %s %v", node.Addr, addr, method, args)
 	}
 	// Note: Here we use DialTimeout to set a timeout of 20 milliseconds.
@@ -201,7 +201,7 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 }
 
 // RPC methods for topological structures.
-func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
+func (node *Node) RPCGetNodeInfo(_ string, reply *NodeInfo) error {
 	node.NodeInfoLock.RLock()
 	reply.Addr = node.Addr
 	reply.Predecessor = node.Predecessor
@@ -212,7 +212,7 @@ func (node *Node) GetNodeInfo(_ string, reply *NodeInfo) error {
 	return nil
 }
 
-func (node *Node) ChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
+func (node *Node) RPCChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
 	node.NodeInfoLock.Lock()
 	if new_info.Predecessor != "" {
 		node.Predecessor = new_info.Predecessor
@@ -224,7 +224,7 @@ func (node *Node) ChangeNodeInfo(new_info NodeInfo, _ *struct{}) error {
 	return nil
 }
 
-func (node *Node) Notify(predecessor string, _ *struct{}) error {
+func (node *Node) RPCNotify(predecessor string, _ *struct{}) error {
 	node.NodeInfoLock.Lock()
 	if node.Predecessor == "" || IsBetween(FNV1aHash(node.Predecessor), FNV1aHash(node.Addr), FNV1aHash(predecessor)) {
 		node.Predecessor = predecessor
@@ -233,12 +233,12 @@ func (node *Node) Notify(predecessor string, _ *struct{}) error {
 	return nil
 }
 
-func (node *Node) Pong(_ string, flag *bool) error {
+func (node *Node) RPCPong(_ string, flag *bool) error {
 	*flag = (node.Online == 1)
 	return nil
 }
 
-func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error {
+func (node *Node) RPCFindClosestPredecessor(target_id uint64, reply *string) error {
 	node.NodeInfoLock.RLock()
 	self_id := FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
@@ -250,7 +250,7 @@ func (node *Node) FindClosestPredecessor(target_id uint64, reply *string) error 
 		if finger != "" && IsBetween(self_id, target_id, FNV1aHash(finger)) && FNV1aHash(finger) != target_id {
 			*reply = finger
 			//Check the predecessor we find is online.
-			node.RemoteCall(finger, "Node.Pong", "", &flag)
+			node.RemoteCall(finger, "Node.RPCPong", "", &flag)
 			if !flag {
 				node.TableLock.Lock()
 				node.FingersTable[i] = ""
@@ -335,7 +335,7 @@ func (node *Node) FindPredecessor(target_id uint64) NodeInfo {
 	node.NodeInfoLock.RUnlock()
 	for !IsBetween(FNV1aHash(cursor.Addr), FNV1aHash(cursor.SuccessorList[0]), target_id) {
 		node.RemoteCall(cursor.Addr, "Node.FindClosestPredecessor", target_id, &cursor.Addr)
-		node.RemoteCall(cursor.Addr, "Node.GetNodeInfo", "", &cursor)
+		node.RemoteCall(cursor.Addr, "Node.RPCGetNodeInfo", "", &cursor)
 	}
 	logrus.Infof("Predecessor for %d is %v", target_id, cursor)
 	return cursor
@@ -357,7 +357,7 @@ func (node *Node) Stablize() {
 		//The node has not entered the net.
 		return
 	}
-	err := node.RemoteCall(current_successor.Addr, "Node.GetNodeInfo", "", &current_successor)
+	err := node.RemoteCall(current_successor.Addr, "Node.RPCGetNodeInfo", "", &current_successor)
 	if err != nil {
 		node.FixSuccessorList()
 		return
@@ -371,7 +371,7 @@ func (node *Node) Stablize() {
 		node.NodeInfoLock.Unlock()
 		current_successor.Addr = current_successor.Predecessor
 	}
-	node.RemoteCall(current_successor.Addr, "Node.Notify", current_addr, nil)
+	node.RemoteCall(current_successor.Addr, "Node.RPCNotify", current_addr, nil)
 	node.FixSuccessorList()
 }
 
@@ -382,16 +382,17 @@ func (node *Node) FixSuccessorList() {
 	var current_successor NodeInfo
 	node.NodeInfoLock.RLock()
 	current_node.Addr = node.Addr
-	current_node.SuccessorList = node.SuccessorList
+	current_node.SuccessorList = make([]string, ListSize)
+	copy(current_node.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	for ; cursor < ListSize && current_node.SuccessorList[cursor] != "" && !flag; cursor++ {
-		node.RemoteCall(current_node.SuccessorList[cursor], "Node.Pong", "", &flag)
+		node.RemoteCall(current_node.SuccessorList[cursor], "Node.RPCPong", "", &flag)
 	}
 	cursor--
 	if cursor != 0 && current_node.SuccessorList[cursor] != "" {
 		node.RemoteCall(current_node.SuccessorList[cursor], "Node.RPCMergeCopy", FNV1aHash(current_node.Addr), nil)
 	}
-	node.RemoteCall(current_node.SuccessorList[cursor], "Node.GetNodeInfo", "", &current_successor)
+	node.RemoteCall(current_node.SuccessorList[cursor], "Node.RPCGetNodeInfo", "", &current_successor)
 	node.NodeInfoLock.Lock()
 	node.SuccessorList[0] = current_node.SuccessorList[cursor]
 	length := len(current_successor.SuccessorList)
@@ -405,7 +406,8 @@ func (node *Node) PushCopies() {
 	var current_node NodeInfo
 	node.NodeInfoLock.RLock()
 	current_node.Addr = node.Addr
-	current_node.SuccessorList = node.SuccessorList
+	current_node.SuccessorList = make([]string, ListSize)
+	copy(current_node.SuccessorList, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	node.DataLock.RLock()
 	self_id := FNV1aHash(current_node.Addr)
@@ -433,14 +435,14 @@ func (node *Node) CheckCopies() {
 		Addr: node.Predecessor,
 	}
 	node.NodeInfoLock.RUnlock()
-	node.DataLock.Lock()
+	node.DataLock.RLock()
 	for key := range node.Data {
 		keylist = append(keylist, key)
 	}
-	node.DataLock.Unlock()
-	for i := 0; i < ListSize && current_predecessor.Addr != self_addr && current_predecessor.Addr != ""; i++ {
+	node.DataLock.RUnlock()
+	for i := 0; i < ListSize && current_predecessor.Addr != "" && current_predecessor.Addr != self_addr; i++ {
 		predecessorlist = append(predecessorlist, FNV1aHash(current_predecessor.Addr))
-		node.RemoteCall(current_predecessor.Addr, "Node.GetNodeInfo", "", &current_predecessor)
+		node.RemoteCall(current_predecessor.Addr, "Node.RPCGetNodeInfo", "", &current_predecessor)
 		current_predecessor.Addr = current_predecessor.Predecessor
 	}
 	self_id := FNV1aHash(self_addr)
@@ -479,7 +481,7 @@ func (node *Node) FixFingers() {
 
 func (node *Node) PingPredecessor() {
 	flag := false
-	if node.Predecessor == "" || node.RemoteCall(node.Predecessor, "Node.Pong", "", &flag) != nil || !flag {
+	if node.Predecessor == "" || node.RemoteCall(node.Predecessor, "Node.RPCPong", "", &flag) != nil || !flag {
 		node.Predecessor = ""
 	}
 }
@@ -568,7 +570,7 @@ func (node *Node) Join(addr string) bool {
 	copy(node.SuccessorList, node_info.SuccessorList)
 	logrus.Infof("the info in new node is %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.Unlock()
-	node.RemoteCall(node_info.SuccessorList[0], "Node.Notify", node_info.Addr, nil)
+	node.RemoteCall(node_info.SuccessorList[0], "Node.RPCNotify", node_info.Addr, nil)
 	node.TableLock.Lock()
 	for cursor := 0; cursor < 64; cursor++ {
 		node.FingersTable[cursor] = node_info.SuccessorList[0]
@@ -596,8 +598,9 @@ func (node *Node) Quit() {
 	node.NodeInfoLock.RLock()
 	current_predecessor := NodeInfo{
 		Addr:          node.Predecessor,
-		SuccessorList: node.SuccessorList,
+		SuccessorList: make([]string, ListSize),
 	}
+	copy(current_predecessor.SuccessorList, node.SuccessorList)
 	current_successor := NodeInfo{
 		Addr:        node.SuccessorList[0],
 		Predecessor: node.Predecessor,
@@ -605,8 +608,8 @@ func (node *Node) Quit() {
 	node.NodeInfoLock.RUnlock()
 	node.PushCopies()
 	node.RemoteCall(current_successor.Addr, "Node.RPCMergeCopy", FNV1aHash(current_predecessor.Addr), nil)
-	node.RemoteCall(current_predecessor.Addr, "Node.ChangeNodeInfo", current_predecessor, nil)
-	node.RemoteCall(current_successor.Addr, "Node.ChangeNodeInfo", current_successor, nil)
+	node.RemoteCall(current_predecessor.Addr, "Node.RPCChangeNodeInfo", current_predecessor, nil)
+	node.RemoteCall(current_successor.Addr, "Node.RPCChangeNodeInfo", current_successor, nil)
 	node.StopRPCServer()
 }
 
@@ -667,7 +670,7 @@ func (node *Node) Put(key string, value string) bool {
 	}
 	successor := node.FindSuccessor(target_id)
 	var successor_info NodeInfo
-	node.RemoteCall(successor, "Node.GetNodeInfo", "", &successor_info)
+	node.RemoteCall(successor, "Node.RPCGetNodeInfo", "", &successor_info)
 	target := DataPair{
 		Node:  FNV1aHash(successor),
 		Key:   target_id,
@@ -712,7 +715,7 @@ func (node *Node) Delete(key string) bool {
 	}
 	successor := node.FindSuccessor(target_id)
 	var successor_info NodeInfo
-	node.RemoteCall(successor, "Node.GetNodeInfo", "", &successor_info)
+	node.RemoteCall(successor, "Node.RPCGetNodeInfo", "", &successor_info)
 	target := DataPair{
 		Node: FNV1aHash(successor),
 		Key:  target_id,
@@ -740,7 +743,7 @@ func (node *Node) CheckRing() {
 	node.NodeInfoLock.RUnlock()
 	i := 0
 	for i == 0 || cursor.Addr != start {
-		node.RemoteCall(cursor.SuccessorList[0], "Node.GetNodeInfo", "", &cursor)
+		node.RemoteCall(cursor.SuccessorList[0], "Node.RPCGetNodeInfo", "", &cursor)
 		i++
 		logrus.Infof("CheckRing: The %d node is %s", i, cursor.Addr)
 	}
