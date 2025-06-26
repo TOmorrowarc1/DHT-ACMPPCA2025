@@ -219,6 +219,11 @@ func quitAndStabilizeTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
+				if !ok {
+					logrus.Infof("get no pair on %s", key)
+				} else {
+					logrus.Infof("wrong pair on %s", key)
+				}
 				getInfo.fail()
 			} else {
 				getInfo.success()
