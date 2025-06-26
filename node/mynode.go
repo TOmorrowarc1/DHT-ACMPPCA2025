@@ -148,7 +148,6 @@ func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 			delete(node.Data, key)
 		}
 	}
-	logrus.Infof("The copy %d after merge is %v", target_id, node.Data[target_id])
 	node.DataLock.Unlock()
 }
 
@@ -207,7 +206,6 @@ func (node *Node) RPCGetNodeInfo(_ string, reply *NodeInfo) error {
 	reply.Predecessor = node.Predecessor
 	reply.SuccessorList = make([]string, ListSize)
 	copy(reply.SuccessorList, node.SuccessorList)
-	logrus.Infof("NodeInfo: %s %s %v", node.Addr, node.Predecessor, node.SuccessorList)
 	node.NodeInfoLock.RUnlock()
 	return nil
 }
@@ -423,7 +421,6 @@ func (node *Node) PushCopies() {
 	node.NodeInfoLock.RUnlock()
 	node.DataLock.RLock()
 	self_id := FNV1aHash(current_node.Addr)
-	logrus.Infof("The map in %s is %v", current_node.Addr, node.Data[self_id])
 	self_data := MapIntPair{
 		Map:  make(map[uint64]string),
 		Node: self_id,
@@ -431,7 +428,6 @@ func (node *Node) PushCopies() {
 	for k, v := range node.Data[self_id] {
 		self_data.Map[k] = v
 	}
-	logrus.Infof("The copy is %v", self_data)
 	node.DataLock.RUnlock()
 	for cursor := 0; cursor < ListSize && current_node.SuccessorList[cursor] != "" && current_node.SuccessorList[cursor] != current_node.Addr; cursor++ {
 		node.RemoteCall(current_node.SuccessorList[cursor], "Node.RPCPutCopy", self_data, nil)
@@ -702,24 +698,6 @@ func (node *Node) Delete(key string) bool {
 		}(successor_info.SuccessorList[current_cursor], target)
 	}
 	return flag
-}
-
-// Test functions:
-func (node *Node) CheckRing() {
-	node.NodeInfoLock.RLock()
-	start := node.Addr
-	cursor := NodeInfo{
-		Addr:          node.Addr,
-		SuccessorList: make([]string, ListSize),
-	}
-	copy(cursor.SuccessorList, node.SuccessorList)
-	node.NodeInfoLock.RUnlock()
-	i := 0
-	for i == 0 || cursor.Addr != start {
-		node.RemoteCall(cursor.SuccessorList[0], "Node.RPCGetNodeInfo", "", &cursor)
-		i++
-		logrus.Infof("CheckRing: The %d node is %s", i, cursor.Addr)
-	}
 }
 
 func (node *Node) PrintInfo() {
