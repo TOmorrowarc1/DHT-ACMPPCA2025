@@ -131,3 +131,18 @@ func (list *RouteList) EraseAddress(target string) {
 	}
 	list.Buckets[bucket_cursor][KValue-1] = ""
 }
+
+func (list *RouteList) ReturnAll() []string {
+	var result []string
+	list.ListLock.RLock()
+	defer list.ListLock.RUnlock()
+	for _, bucket := range list.Buckets {
+		for _, node := range bucket {
+			if node == "" {
+				break
+			}
+			result = append(result, node)
+		}
+	}
+	return result
+}

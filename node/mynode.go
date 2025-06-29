@@ -1,7 +1,6 @@
 package node
 
 import (
-	"io"
 	"math/rand"
 	"net"
 	"net/rpc"
@@ -102,16 +101,14 @@ func (node *Node) RemoteCall(addr string, method string, args interface{}, reply
 		return err
 	}
 	err = client.Call(method, args, reply)
-	if err == rpc.ErrShutdown || err == io.EOF {
-		client.Close()
-	} else {
-		node.pool.Put(addr, client)
-	}
 	if err != nil {
+		client.Close()
 		logrus.Error("RemoteCall error: ", err)
 		return err
+	} else {
+		node.pool.Put(addr, client)
+		return nil
 	}
-	return nil
 }
 
 // RPC Methods
@@ -160,6 +157,11 @@ func (node *Node) RPCPing(addr string, reply *bool) error {
 	return nil
 }
 
+func (node *Node) RPCEraseAddr(addr string, _ *struct{}) error {
+	node.Route.EraseAddress(addr)
+	return nil
+}
+
 // Routing algorithm
 type CandidateNodes struct {
 	Addr     string
@@ -169,6 +171,7 @@ type CandidateNodes struct {
 func (node *Node) FindNodesID(target_id uint64) []string {
 	//logrus.Infof("%s FindNodesID for %d", node.Route.SelfInfo(), target_id)
 	has_quired := make(map[string]struct{})
+	failed_nodes := make(map[string]struct{})
 	shortlist := make([]CandidateNodes, 0, KValue)
 	start := node.Route.FindClosestNodes(target_id)
 	for _, possible := range start {
@@ -196,6 +199,7 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 			break
 		}
 		resultsChan := make(chan []string, len(quiry_nodes))
+		failedChan := make(chan string, len(quiry_nodes))
 		var wait sync.WaitGroup
 		for _, candidate := range quiry_nodes {
 			has_quired[candidate] = struct{}{}
@@ -212,12 +216,17 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 					resultsChan <- reply
 					node.Route.Acknowledge(quiry_node)
 				} else {
+					failedChan <- quiry_node
 					node.Route.EraseAddress(quiry_node)
 				}
 			}(candidate)
 		}
 		wait.Wait()
 		close(resultsChan)
+		close(failedChan)
+		for failed_node := range failedChan {
+			failed_nodes[failed_node] = struct{}{}
+		}
 		for new_nodes := range resultsChan {
 			for _, possible := range new_nodes {
 				is_new := true
@@ -322,7 +331,7 @@ func (node *Node) BackGroundStart() {
 		defer node.BackGroundWait.Done()
 		for atomic.LoadUint32(&node.Online) == 1 {
 			node.Publish(0)
-			time.Sleep(1 * time.Second)
+			time.Sleep(500 * time.Millisecond)
 		}
 	}()
 }
@@ -346,7 +355,7 @@ func (node *Node) Create() {
 }
 
 func (node *Node) Join(addr string) bool {
-	logrus.Infof("Node %s join, whose hash is %d", node.Route.SelfInfo(), FNV1aHash(node.Route.SelfInfo()))
+	//logrus.Infof("Node %s join, whose hash is %d", node.Route.SelfInfo(), FNV1aHash(node.Route.SelfInfo()))
 	node.Route.Acknowledge(addr)
 	node.FindNodes(addr)
 	node.BackGroundStart()
@@ -358,7 +367,13 @@ func (node *Node) Quit() {
 		return
 	}
 	//Hand all the items out, no matter it has published or not.
+	//logrus.Infof("Quit node %s", node.Route.SelfInfo())
 	node.Publish(-1)
+	self_addr := node.Route.SelfInfo()
+	target_nodes := node.Route.ReturnAll()
+	for _, target_node := range target_nodes {
+		node.RemoteCall(target_node, "Node.RPCEraseAddr", self_addr, nil)
+	}
 	atomic.StoreUint32(&node.Online, 0)
 	node.StopRPCServer()
 	node.BackGroundWait.Wait()
@@ -371,7 +386,7 @@ func (node *Node) ForceQuit() {
 }
 
 func (node *Node) Put(key string, value string) bool {
-	logrus.Infof("Put key %s, whose hash is %d", key, FNV1aHash(key))
+	//logrus.Infof("Put key %s, whose hash is %d", key, FNV1aHash(key))
 	target_nodes := node.FindNodes(key)
 	pair := ContentPair{
 		Addr: node.Route.SelfInfo(),
