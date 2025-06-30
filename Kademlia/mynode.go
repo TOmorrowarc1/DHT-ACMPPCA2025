@@ -172,7 +172,7 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 	//logrus.Infof("%s FindNodesID for %d", node.Route.SelfInfo(), target_id)
 	has_quired := make(map[string]struct{})
 	failed_nodes := make(map[string]struct{})
-	shortlist := make([]CandidateNodes, 0, KValue)
+	shortlist := make([]CandidateNodes, 0)
 	start := node.Route.FindClosestNodes(target_id)
 	for _, possible := range start {
 		if possible == "" {
@@ -226,6 +226,13 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 		close(failedChan)
 		for failed_node := range failedChan {
 			failed_nodes[failed_node] = struct{}{}
+			length := len(shortlist)
+			for cursor := 0; cursor < length; cursor++ {
+				if shortlist[cursor].Addr == failed_node {
+					shortlist = append(shortlist[:cursor], shortlist[cursor+1:]...)
+					break
+				}
+			}
 		}
 		for new_nodes := range resultsChan {
 			for _, possible := range new_nodes {
@@ -237,7 +244,8 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 						break
 					}
 				}
-				if is_new {
+				_, failed := failed_nodes[possible]
+				if is_new && !failed {
 					new_node := CandidateNodes{
 						Addr:     possible,
 						Distance: target_id ^ FNV1aHash(possible),
