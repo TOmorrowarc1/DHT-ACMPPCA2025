@@ -38,8 +38,9 @@ type Node struct {
 	DataLock sync.RWMutex
 
 	Online   uint32
-	Listener net.Listener
-	Server   *rpc.Server
+	listener net.Listener
+	server   *rpc.Server
+	pool     *ConnectionPool
 	Wait     sync.WaitGroup
 }
 
@@ -156,47 +157,54 @@ func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 }
 
 // Sealing: RPC services and RPC methods.
+// RPC: NetWork Service.
 func (node *Node) RunRPCServer() {
-	node.Server = rpc.NewServer()
-	node.Server.Register(node)
+	node.server = rpc.NewServer()
+	node.server.Register(node)
 	var err error
-	node.Listener, err = net.Listen("tcp", node.Addr)
+	node.NodeInfoLock.RLock()
+	addr := node.Addr
+	node.NodeInfoLock.RUnlock()
+	node.listener, err = net.Listen("tcp", addr)
 	if err != nil {
 		logrus.Fatal("listen error: ", err)
 	}
-	for node.Online == 1 {
-		conn, err := node.Listener.Accept()
+	for atomic.LoadUint32(&node.Online) == 1 {
+		conn, err := node.listener.Accept()
 		if err != nil {
 			logrus.Error("accept error: ", err)
 			return
 		}
-		go node.Server.ServeConn(conn)
+		go node.server.ServeConn(conn)
 	}
 }
 
 func (node *Node) StopRPCServer() {
-	node.NodeInfoLock.RLock()
-	addr := node.Addr
-	node.NodeInfoLock.RUnlock()
-	node.Listener.Close()
-	logrus.Infof("RPC listener on %s closed", addr)
+	node.listener.Close()
+	node.pool.Close()
 }
 
-// Re-connect to the client every time can be slow. You can use connection pool to improve the performance.
 func (node *Node) RemoteCall(addr string, method string, args interface{}, reply interface{}) error {
-	conn, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+	node.NodeInfoLock.RLock()
+	self_addr := node.Addr
+	node.NodeInfoLock.RUnlock()
+	if method != "Node.RPCPing" && method != "Node.RPCFindClosestNodes" {
+		logrus.Infof("[%s] RemoteCall %s %s %v", self_addr, addr, method, args)
+	}
+	client, err := node.pool.Get(addr)
 	if err != nil {
-		logrus.Error("dialing: ", err)
+		logrus.Error("failed to get connection from pool: ", err)
 		return err
 	}
-	client := rpc.NewClient(conn)
-	defer client.Close()
 	err = client.Call(method, args, reply)
 	if err != nil {
+		client.Close()
 		logrus.Error("RemoteCall error: ", err)
 		return err
+	} else {
+		node.pool.Put(addr, client)
+		return nil
 	}
-	return nil
 }
 
 // RPC methods for topological structures.
@@ -498,6 +506,7 @@ func (node *Node) Init(addr string) {
 	node.Data[FNV1aHash(addr)] = make(map[uint64]string)
 	node.SuccessorList = make([]string, ListSize)
 	node.FingersTable = make([]string, 64)
+	node.pool = NewConnectionPool()
 }
 
 func (node *Node) Run() {
