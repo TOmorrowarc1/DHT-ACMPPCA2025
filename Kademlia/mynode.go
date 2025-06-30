@@ -169,7 +169,6 @@ type CandidateNodes struct {
 }
 
 func (node *Node) FindNodesID(target_id uint64) []string {
-	//logrus.Infof("%s FindNodesID for %d", node.Route.SelfInfo(), target_id)
 	has_quired := make(map[string]struct{})
 	failed_nodes := make(map[string]struct{})
 	shortlist := make([]CandidateNodes, 0)
@@ -265,7 +264,6 @@ func (node *Node) FindNodesID(target_id uint64) []string {
 	for _, result := range shortlist {
 		answer = append(answer, result.Addr)
 	}
-	//logrus.Infof("%s FindNodesID for %d, get %v", node.Route.SelfInfo(), target_id, answer)
 	if len(answer) == 0 {
 		answer = append(answer, node.Route.SelfInfo())
 	}
@@ -363,7 +361,6 @@ func (node *Node) Create() {
 }
 
 func (node *Node) Join(addr string) bool {
-	//logrus.Infof("Node %s join, whose hash is %d", node.Route.SelfInfo(), FNV1aHash(node.Route.SelfInfo()))
 	node.Route.Acknowledge(addr)
 	node.FindNodes(addr)
 	node.BackGroundStart()
@@ -375,7 +372,6 @@ func (node *Node) Quit() {
 		return
 	}
 	//Hand all the items out, no matter it has published or not.
-	//logrus.Infof("Quit node %s", node.Route.SelfInfo())
 	node.Publish(-1)
 	self_addr := node.Route.SelfInfo()
 	target_nodes := node.Route.ReturnAll()
@@ -394,7 +390,6 @@ func (node *Node) ForceQuit() {
 }
 
 func (node *Node) Put(key string, value string) bool {
-	//logrus.Infof("Put key %s, whose hash is %d", key, FNV1aHash(key))
 	target_nodes := node.FindNodes(key)
 	pair := ContentPair{
 		Addr: node.Route.SelfInfo(),
