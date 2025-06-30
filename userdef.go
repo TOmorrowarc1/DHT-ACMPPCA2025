@@ -1,7 +1,7 @@
 package main
 
 import (
-	"dht/node"
+	"dht/Kademlia"
 )
 
 /*
