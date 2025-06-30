@@ -57,7 +57,7 @@ func main() {
 		}
 		time.Sleep(afterTestSleepTime)
 		fallthrough
-	case "advance1":
+	case "advance":
 		yellow.Println("Advance Test Begins:")
 
 		/* ------ Force Quit Test Begins ------ */
@@ -73,9 +73,9 @@ func main() {
 		} else {
 			green.Printf("Force quit test passed with fail rate %.4f\n\n", forceQuitFailRate)
 		}
-		//time.Sleep(afterTestSleepTime)
+		time.Sleep(afterTestSleepTime)
 		/* ------ Force Quit Test Ends ------ */
-	case "advance2":
+		
 		/* ------ Quit & Stabilize Test Begins ------ */
 		QASPanicked, QASFailedCnt, QASTotalCnt := quitAndStabilizeTest()
 		if QASPanicked {
