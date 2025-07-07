@@ -51,7 +51,7 @@ const (
 	ConsisNodeSize           int     = 50
 	ConsisPutSize            int     = 500
 	ConsisMaxFailRate        float64 = 0.01
-	ConsisDeleteSize         int     = 20
+	ConsisDeleteSize         int     = 200
 	ConsisAfterRunSleepTime          = 200 * time.Millisecond
 	ConsisJoinSleepTime              = time.Second
 	ConsisAfterJoinSleepTime         = 10 * time.Second

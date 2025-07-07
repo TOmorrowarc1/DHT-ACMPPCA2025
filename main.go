@@ -19,7 +19,7 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance" && testName != "all" && testName != "consistent") {
+	if help || (testName != "basic" && testName != "advance" && testName != "all" && testName != "extra" && testName != "consistent") {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -34,6 +34,7 @@ func main() {
 	var forceQuitFailRate float64
 	var QASFailRate float64
 	var ConsisFailRate float64
+	var extraFailRate float64
 
 	switch testName {
 	case "all":
@@ -105,6 +106,20 @@ func main() {
 			red.Printf("Consistency test failed with fail rate %.4f\n\n", QASFailRate)
 		} else {
 			green.Printf("Consistency test passed with fail rate %.4f\n\n", QASFailRate)
+		}
+		fallthrough
+	case "extra":
+		extraPanicked, extraFailedCnt, extraTotalCnt := extraTest()
+		if extraPanicked {
+			red.Printf("extratency Test Panicked.")
+			os.Exit(0)
+		}
+
+		extraFailRate = float64(extraFailedCnt) / float64(extraTotalCnt)
+		if extraFailRate > extraMaxFailRate {
+			red.Printf("extratency test failed with fail rate %.4f\n\n", QASFailRate)
+		} else {
+			green.Printf("extratency test passed with fail rate %.4f\n\n", QASFailRate)
 		}
 	}
 
