@@ -19,7 +19,7 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance1" && testName != "advance2" && testName != "all") {
+	if help || (testName != "basic" && testName != "advance1" && testName != "advance2" && testName != "all" && testName != "consistent") {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -28,11 +28,12 @@ func init() {
 }
 
 func main() {
-	yellow.Printf("Welcome to DHT-2023 Test Program!\n\n")
+	yellow.Printf("Welcome to DHT-2024 Test Program!\n\n")
 
 	var basicFailRate float64
 	var forceQuitFailRate float64
 	var QASFailRate float64
+	var ConsisFailRate float64
 
 	switch testName {
 	case "all":
@@ -95,6 +96,20 @@ func main() {
 			green.Printf("Quit & Stabilize test passed with fail rate %.4f\n\n", QASFailRate)
 		}
 		/* ------ Quit & Stabilize Test Ends ------ */
+
+	case "consistent":
+		ConsisPanicked, ConsisFailedCnt, ConsisTotalCnt := ConsistencyTest()
+		if ConsisPanicked {
+			red.Printf("Consistency Test Panicked.")
+			os.Exit(0)
+		}
+
+		ConsisFailRate = float64(ConsisFailedCnt) / float64(ConsisTotalCnt)
+		if ConsisFailRate > ConsisMaxFailRate {
+			red.Printf("Consistency test failed with fail rate %.4f\n\n", ConsisFailRate)
+		} else {
+			green.Printf("Consistency test passed with fail rate %.4f\n\n", ConsisFailRate)
+		}
 	}
 
 	cyan.Println("\nFinal print:")
@@ -112,6 +127,11 @@ func main() {
 		red.Printf("Quit & Stabilize test failed with fail rate %.4f\n", QASFailRate)
 	} else {
 		green.Printf("Quit & Stabilize test passed with fail rate %.4f\n", QASFailRate)
+	}
+	if ConsisFailRate > ConsisMaxFailRate {
+		red.Printf("Consistenet test failed with fail rate %.4f\n", QASFailRate)
+	} else {
+		green.Printf("Consistenet test passed with fail rate %.4f\n", QASFailRate)
 	}
 }
 

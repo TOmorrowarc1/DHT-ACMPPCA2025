@@ -47,6 +47,18 @@ const (
 	QASJoinSleepTime              = time.Second
 	QASAfterJoinSleepTime         = 10 * time.Second
 	QASQuitSleepTime              = 80 * time.Millisecond
+
+	//My consistency test.
+	ConsisNodeSize             int     = 50
+	ConsisPutSize              int     = 500
+	ConsisMaxFailRate          float64 = 0.01
+	ConsisDeleteSize           int     = 100
+	ConsisRePutSize            int     = 200
+	ConsisAfterRunSleepTime            = 200 * time.Millisecond
+	ConsisAfterDeleteSleepTime         = 500 * time.Millisecond
+	ConsisAfterPutSleepTime            = 500 * time.Millisecond
+	ConsisJoinSleepTime                = time.Second
+	ConsisAfterJoinSleepTime           = 10 * time.Second
 )
 
 var (
