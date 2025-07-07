@@ -68,7 +68,7 @@ type Node struct {
 }
 
 // RPC: NetWork Service.
-func (node *Node) RunRPCServer() {
+func (node *Node) RunRPCServer(wg *sync.WaitGroup) {
 	node.server = rpc.NewServer()
 	node.server.Register(node)
 	var err error
@@ -351,9 +351,9 @@ func (node *Node) Init(addr string) {
 	node.Data = make(map[uint64]Content)
 }
 
-func (node *Node) Run() {
+func (node *Node) Run(wg *sync.WaitGroup) {
 	atomic.StoreUint32(&node.Online, 1)
-	node.RunRPCServer()
+	node.RunRPCServer(wg)
 }
 
 func (node *Node) Create() {
@@ -361,6 +361,7 @@ func (node *Node) Create() {
 }
 
 func (node *Node) Join(addr string) bool {
+	logrus.Infof("Join %s", addr)
 	node.Route.Acknowledge(addr)
 	node.FindNodes(addr)
 	node.BackGroundStart()

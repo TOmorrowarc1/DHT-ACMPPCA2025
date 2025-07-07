@@ -136,6 +136,7 @@ func ConsistencyTest() (bool, int, int) {
 			}
 		} else {
 			if ok {
+				logrus.Infof("failed on key %s", key)
 				getInfo.fail()
 			} else {
 				getInfo.success()

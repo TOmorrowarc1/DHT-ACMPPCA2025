@@ -5,8 +5,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 func forceQuitTest() (bool, int, int) {
@@ -33,8 +31,10 @@ func forceQuitTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
+
+	wg.Wait()
 	time.Sleep(forceQuitAfterRunSleepTime)
 
 	/* Node 0 creates a new network. All notes join the network. */
@@ -146,8 +146,9 @@ func quitAndStabilizeTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
+	wg.Wait()
 	time.Sleep(QASAfterRunSleepTime)
 
 	/* Node 0 creates a new network. All notes join the network. */
@@ -214,11 +215,6 @@ func quitAndStabilizeTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
-				if !ok {
-					logrus.Infof("get no pair on %s", key)
-				} else {
-					logrus.Infof("wrong pair %s", key)
-				}
 				getInfo.fail()
 			} else {
 				getInfo.success()
