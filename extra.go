@@ -130,7 +130,7 @@ func ConsistencyTest() (bool, int, int) {
 	cyan.Printf("Start getting\n")
 	for key, value := range kvMap {
 		ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
-		if res != "delete" {
+		if value != "delete" {
 			if !ok || res != value {
 				getInfo.fail()
 			} else {

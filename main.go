@@ -19,7 +19,7 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance" && testName != "all") {
+	if help || (testName != "basic" && testName != "advance" && testName != "all" && testName != "consistent") {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -33,6 +33,7 @@ func main() {
 	var basicFailRate float64
 	var forceQuitFailRate float64
 	var QASFailRate float64
+	var ConsisFailRate float64
 
 	switch testName {
 	case "all":
@@ -90,6 +91,21 @@ func main() {
 			green.Printf("Quit & Stabilize test passed with fail rate %.4f\n\n", QASFailRate)
 		}
 		/* ------ Quit & Stabilize Test Ends ------ */
+		time.Sleep(afterTestSleepTime)
+		fallthrough
+	case "consistent":
+		ConsisPanicked, ConsisFailedCnt, ConsisTotalCnt := ConsistencyTest()
+		if ConsisPanicked {
+			red.Printf("Consistency Test Panicked.")
+			os.Exit(0)
+		}
+
+		ConsisFailRate = float64(ConsisFailedCnt) / float64(ConsisTotalCnt)
+		if ConsisFailRate > ConsisMaxFailRate {
+			red.Printf("Consistency test failed with fail rate %.4f\n\n", QASFailRate)
+		} else {
+			green.Printf("Consistency test passed with fail rate %.4f\n\n", QASFailRate)
+		}
 	}
 
 	cyan.Println("\nFinal print:")

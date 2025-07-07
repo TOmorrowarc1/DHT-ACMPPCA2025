@@ -186,6 +186,11 @@ func basicTest() (bool, int, int) {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
 				get2Info.fail()
+				if !ok {
+					logrus.Infof("failed get on %s with no pair", key)
+				} else {
+					logrus.Infof("failed get on %s with wrong pair %s, should be %s", key, res, value)
+				}
 			} else {
 				get2Info.success()
 			}
