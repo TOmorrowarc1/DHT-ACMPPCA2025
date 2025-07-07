@@ -32,7 +32,7 @@ func ConsistencyTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
 	time.Sleep(ConsisAfterRunSleepTime)
 
@@ -107,14 +107,16 @@ func ConsistencyTest() (bool, int, int) {
 	cyan.Printf("Start deleting\n")
 	for i := 1; i <= ConsisDeleteSize; i++ {
 		for key := range kvMap {
-			kvMap[key] = "delete"
-			success := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Delete(key)
-			if !success {
-				delete1Info.fail()
-			} else {
-				delete1Info.success()
+			if kvMap[key] != "delete" {
+				kvMap[key] = "delete"
+				success := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Delete(key)
+				if !success {
+					delete1Info.fail()
+				} else {
+					delete1Info.success()
+				}
+				break
 			}
-			break
 		}
 	}
 	delete1Info.finish(&ConsistencyFailedCnt, &ConsistencyTotalCnt)
@@ -136,7 +138,7 @@ func ConsistencyTest() (bool, int, int) {
 			}
 		} else {
 			if ok {
-				logrus.Infof("failed on key %s", key)
+				logrus.Infof("failed on key %s with the value %s", key, res)
 				getInfo.fail()
 			} else {
 				getInfo.success()

@@ -73,6 +73,7 @@ func (node *Node) RunRPCServer(wg *sync.WaitGroup) {
 	node.server.Register(node)
 	var err error
 	node.listener, err = net.Listen("tcp", node.Route.SelfInfo())
+	wg.Done()
 	if err != nil {
 		logrus.Fatal("listen error: ", err)
 	}
