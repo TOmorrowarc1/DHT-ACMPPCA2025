@@ -424,5 +424,9 @@ func (node *Node) Get(key string) (bool, string) {
 }
 
 func (node *Node) Delete(key string) bool {
+	exist, value := node.Get(key)
+	if !exist || value == TombStone {
+		return false
+	}
 	return node.Put(key, TombStone)
 }
