@@ -158,7 +158,7 @@ func (node *Node) MergeCopy(start_id uint64, target_id uint64) {
 
 // Sealing: RPC services and RPC methods.
 // RPC: NetWork Service.
-func (node *Node) RunRPCServer() {
+func (node *Node) RunRPCServer(wg *sync.WaitGroup) {
 	node.server = rpc.NewServer()
 	node.server.Register(node)
 	var err error
@@ -166,6 +166,7 @@ func (node *Node) RunRPCServer() {
 	addr := node.Addr
 	node.NodeInfoLock.RUnlock()
 	node.listener, err = net.Listen("tcp", addr)
+	wg.Done()
 	if err != nil {
 		logrus.Fatal("listen error: ", err)
 	}
@@ -509,9 +510,9 @@ func (node *Node) Init(addr string) {
 	node.pool = NewConnectionPool()
 }
 
-func (node *Node) Run() {
+func (node *Node) Run(wg *sync.WaitGroup) {
 	node.Online = 1
-	go node.RunRPCServer()
+	node.RunRPCServer(wg)
 }
 
 func (node *Node) BackGroundStart() {

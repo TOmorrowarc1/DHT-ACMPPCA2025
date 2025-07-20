@@ -5,7 +5,6 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-
 )
 
 func forceQuitTest() (bool, int, int) {
@@ -32,8 +31,10 @@ func forceQuitTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
+
+	wg.Wait()
 	time.Sleep(forceQuitAfterRunSleepTime)
 
 	/* Node 0 creates a new network. All notes join the network. */
@@ -145,8 +146,9 @@ func quitAndStabilizeTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
+	wg.Wait()
 	time.Sleep(QASAfterRunSleepTime)
 
 	/* Node 0 creates a new network. All notes join the network. */

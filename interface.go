@@ -1,8 +1,10 @@
 package main
 
+import "sync"
+
 type dhtNode interface {
 	// "Run" is called after calling "NewNode". You can do some initialization works here.
-	Run()
+	Run(waitgroup *sync.WaitGroup)
 
 	// "Create" or "Join" will be called after calling "Run".
 	// For a dhtNode, either "Create" or "Join" will be called, but not both.
@@ -35,6 +37,4 @@ type dhtNode interface {
 	// Remove a key-value pair identified by KEY from the network.
 	// Return "true" if success, "false" otherwise.
 	Delete(key string) bool
-
-	PrintInfo()
 }

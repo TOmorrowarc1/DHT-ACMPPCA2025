@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"github.com/sirupsen/logrus"
 	"math/rand"
 	"sync"
 	"time"
@@ -29,15 +28,16 @@ func basicTest() (bool, int, int) {
 		nodeAddresses[i] = portToAddr(localAddress, firstPort+i)
 
 		wg.Add(1)
-		go nodes[i].Run()
+		go nodes[i].Run(wg)
 	}
+
+	wg.Wait()
 
 	nodesInNetwork := make([]int, 0, basicTestNodeSize+1)
 
 	time.Sleep(basicTestAfterRunSleepTime)
 
 	/* Node 0 now creates a new network. */
-	logrus.Infof("node 0 create")
 	nodes[0].Create()
 	nodesInNetwork = append(nodesInNetwork, 0)
 
@@ -54,7 +54,6 @@ func basicTest() (bool, int, int) {
 		}
 		cyan.Printf("Start joining (round %d)\n", t)
 		for j := 1; j <= basicTestRoundJoinNodeSize; j++ {
-			logrus.Infof("Join Node the No.[%d]", j)
 			addr := nodeAddresses[nodesInNetwork[rand.Intn(len(nodesInNetwork))]]
 			if !nodes[nextJoinNode].Join(addr) {
 				joinInfo.fail()
@@ -101,11 +100,6 @@ func basicTest() (bool, int, int) {
 		for key, value := range kvMap {
 			ok, res := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Get(key)
 			if !ok || res != value {
-				if !ok {
-					logrus.Infof("get no pair on pair %s", key)
-				} else {
-					logrus.Infof("wrong pair: %s should be %s", res, value)
-				}
 				get1Info.fail()
 			} else {
 				get1Info.success()
@@ -127,16 +121,14 @@ func basicTest() (bool, int, int) {
 		cyan.Printf("Start deleting (round %d, part 1)\n", t)
 		for i := 1; i <= basicTestRoundDeleteSize; i++ {
 			for key := range kvMap {
-				logrus.Infof("delete pair %s", key)
 				delete(kvMap, key)
 				success := nodes[nodesInNetwork[rand.Intn(len(nodesInNetwork))]].Delete(key)
 				if !success {
-					logrus.Infof("Deleted fail on %s", key)
 					delete1Info.fail()
 				} else {
 					delete1Info.success()
 				}
-				logrus.Infof("finish delete")
+
 				break
 			}
 		}

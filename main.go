@@ -19,7 +19,7 @@ func init() {
 	flag.Usage = usage
 	flag.Parse()
 
-	if help || (testName != "basic" && testName != "advance1" && testName != "advance2" && testName != "all") {
+	if help || (testName != "basic" && testName != "advance" && testName != "all") {
 		flag.Usage()
 		os.Exit(0)
 	}
@@ -28,7 +28,7 @@ func init() {
 }
 
 func main() {
-	yellow.Printf("Welcome to DHT-2023 Test Program!\n\n")
+	yellow.Printf("Welcome to DHT-2025 Test Program!\n\n")
 
 	var basicFailRate float64
 	var forceQuitFailRate float64
@@ -75,7 +75,7 @@ func main() {
 		}
 		time.Sleep(afterTestSleepTime)
 		/* ------ Force Quit Test Ends ------ */
-		
+
 		/* ------ Quit & Stabilize Test Begins ------ */
 		QASPanicked, QASFailedCnt, QASTotalCnt := quitAndStabilizeTest()
 		if QASPanicked {
