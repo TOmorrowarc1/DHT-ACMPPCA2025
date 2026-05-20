@@ -10,6 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"dht/network"
+
 	"github.com/sirupsen/logrus"
 )
 
@@ -40,7 +42,7 @@ type Node struct {
 	Online   uint32
 	listener net.Listener
 	server   *rpc.Server
-	pool     *ConnectionPool
+	pool     *network.ConnectionPool
 	Wait     sync.WaitGroup
 }
 
@@ -507,7 +509,7 @@ func (node *Node) Init(addr string) {
 	node.Data[FNV1aHash(addr)] = make(map[uint64]string)
 	node.SuccessorList = make([]string, ListSize)
 	node.FingersTable = make([]string, 64)
-	node.pool = NewConnectionPool()
+	node.pool = network.NewConnectionPool()
 }
 
 func (node *Node) Run(wg *sync.WaitGroup) {

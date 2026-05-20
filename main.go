@@ -1,115 +1,103 @@
 package main
 
 import (
+	"bufio"
 	"flag"
-	"math/rand"
+	"fmt"
 	"os"
-	"time"
+	"os/signal"
+	"strings"
+	"sync"
+
+	"dht/node"
 )
-
-var (
-	help     bool
-	testName string
-)
-
-func init() {
-	flag.BoolVar(&help, "help", false, "help")
-	flag.StringVar(&testName, "test", "", "which test(s) do you want to run: basic/advance/all")
-
-	flag.Usage = usage
-	flag.Parse()
-
-	if help || (testName != "basic" && testName != "advance" && testName != "all") {
-		flag.Usage()
-		os.Exit(0)
-	}
-
-	rand.Seed(time.Now().UnixNano())
-}
 
 func main() {
-	yellow.Printf("Welcome to DHT-2025 Test Program!\n\n")
+	port := flag.Int("port", 20000, "port to listen on")
+	join := flag.String("join", "", "address of existing node to join")
+	flag.Parse()
 
-	var basicFailRate float64
-	var forceQuitFailRate float64
-	var QASFailRate float64
+	n := node.NewNode(*port)
 
-	switch testName {
-	case "all":
-		fallthrough
-	case "basic":
-		yellow.Println("Basic Test Begins:")
-		basicPanicked, basicFailedCnt, basicTotalCnt := basicTest()
-		if basicPanicked {
-			red.Printf("Basic Test Panicked.")
-			os.Exit(0)
-		}
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go n.Run(&wg)
+	wg.Wait()
 
-		basicFailRate = float64(basicFailedCnt) / float64(basicTotalCnt)
-		if basicFailRate > basicTestMaxFailRate {
-			red.Printf("Basic test failed with fail rate %.4f\n\n", basicFailRate)
-		} else {
-			green.Printf("Basic test passed with fail rate %.4f\n\n", basicFailRate)
-		}
-
-		if testName == "basic" {
-			break
-		}
-		time.Sleep(afterTestSleepTime)
-		fallthrough
-	case "advance":
-		yellow.Println("Advance Test Begins:")
-
-		/* ------ Force Quit Test Begins ------ */
-		forceQuitPanicked, forceQuitFailedCnt, forceQuitTotalCnt := forceQuitTest()
-		if forceQuitPanicked {
-			red.Printf("Force Quit Test Panicked.")
-			os.Exit(0)
-		}
-
-		forceQuitFailRate = float64(forceQuitFailedCnt) / float64(forceQuitTotalCnt)
-		if forceQuitFailRate > forceQuitMaxFailRate {
-			red.Printf("Force quit test failed with fail rate %.4f\n\n", forceQuitFailRate)
-		} else {
-			green.Printf("Force quit test passed with fail rate %.4f\n\n", forceQuitFailRate)
-		}
-		time.Sleep(afterTestSleepTime)
-		/* ------ Force Quit Test Ends ------ */
-
-		/* ------ Quit & Stabilize Test Begins ------ */
-		QASPanicked, QASFailedCnt, QASTotalCnt := quitAndStabilizeTest()
-		if QASPanicked {
-			red.Printf("Quit & Stabilize Test Panicked.")
-			os.Exit(0)
-		}
-
-		QASFailRate = float64(QASFailedCnt) / float64(QASTotalCnt)
-		if QASFailRate > QASMaxFailRate {
-			red.Printf("Quit & Stabilize test failed with fail rate %.4f\n\n", QASFailRate)
-		} else {
-			green.Printf("Quit & Stabilize test passed with fail rate %.4f\n\n", QASFailRate)
-		}
-		/* ------ Quit & Stabilize Test Ends ------ */
-	}
-
-	cyan.Println("\nFinal print:")
-	if basicFailRate > basicTestMaxFailRate {
-		red.Printf("Basic test failed with fail rate %.4f\n", basicFailRate)
+	if *join != "" {
+		n.Join(*join)
 	} else {
-		green.Printf("Basic test passed with fail rate %.4f\n", basicFailRate)
+		n.Create()
 	}
-	if forceQuitFailRate > forceQuitMaxFailRate {
-		red.Printf("Force quit test failed with fail rate %.4f\n", forceQuitFailRate)
-	} else {
-		green.Printf("Force quit test passed with fail rate %.4f\n", forceQuitFailRate)
-	}
-	if QASFailRate > QASMaxFailRate {
-		red.Printf("Quit & Stabilize test failed with fail rate %.4f\n", QASFailRate)
-	} else {
-		green.Printf("Quit & Stabilize test passed with fail rate %.4f\n", QASFailRate)
-	}
-}
 
-func usage() {
-	flag.PrintDefaults()
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, os.Interrupt)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	cmdCh := make(chan string)
+
+	go func() {
+		for scanner.Scan() {
+			cmdCh <- scanner.Text()
+		}
+		close(cmdCh)
+	}()
+
+	for {
+		select {
+		case <-sig:
+			fmt.Println("received interrupt")
+			n.Quit()
+			return
+		case line, ok := <-cmdCh:
+			if !ok {
+				n.Quit()
+				return
+			}
+			parts := strings.Fields(line)
+			if len(parts) == 0 {
+				continue
+			}
+			switch parts[0] {
+			case "put":
+				if len(parts) < 3 {
+					fmt.Println("usage: put <key> <value>")
+					continue
+				}
+				ok := n.Put(parts[1], parts[2])
+				if ok {
+					fmt.Println("true")
+				} else {
+					fmt.Println("false")
+				}
+			case "get":
+				if len(parts) < 2 {
+					fmt.Println("usage: get <key>")
+					continue
+				}
+				ok, value := n.Get(parts[1])
+				if ok {
+					fmt.Println(value)
+				} else {
+					fmt.Println("false")
+				}
+			case "delete":
+				if len(parts) < 2 {
+					fmt.Println("usage: delete <key>")
+					continue
+				}
+				ok := n.Delete(parts[1])
+				if ok {
+					fmt.Println("true")
+				} else {
+					fmt.Println("false")
+				}
+			case "quit":
+				n.Quit()
+				return
+			default:
+				fmt.Printf("unknown command: %s\n", parts[0])
+			}
+		}
+	}
 }
