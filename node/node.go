@@ -167,7 +167,11 @@ func (node *Node) RunRPCServer(wg *sync.WaitGroup) {
 	node.NodeInfoLock.RLock()
 	addr := node.Addr
 	node.NodeInfoLock.RUnlock()
-	node.listener, err = net.Listen("tcp", addr)
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		logrus.Fatal("invalid address: ", err)
+	}
+	node.listener, err = net.Listen("tcp", ":"+port)
 	wg.Done()
 	if err != nil {
 		logrus.Fatal("listen error: ", err)

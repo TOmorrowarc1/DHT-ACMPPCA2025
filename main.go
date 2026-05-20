@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"time"
 
 	"dht/node"
 )
@@ -15,8 +16,10 @@ import (
 func main() {
 	port := flag.Int("port", 20000, "port to listen on")
 	join := flag.String("join", "", "address of existing node to join")
+	addr := flag.String("addr", "127.0.0.1", "address to advertise to other nodes")
 	flag.Parse()
 
+	node.SetLocalAddress(*addr)
 	n := node.NewNode(*port)
 
 	var wg sync.WaitGroup
@@ -25,7 +28,12 @@ func main() {
 	wg.Wait()
 
 	if *join != "" {
-		n.Join(*join)
+		for i := 0; i < 30; i++ {
+			if n.Join(*join) {
+				break
+			}
+			time.Sleep(time.Second)
+		}
 	} else {
 		n.Create()
 	}
