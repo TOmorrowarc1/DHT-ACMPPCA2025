@@ -581,7 +581,11 @@ func (node *Node) Join(addr string) bool {
 	logrus.Infof("Join %s, which hash is %d, through %s, which hash is %d", node.Addr, FNV1aHash(node.Addr), addr, FNV1aHash(addr))
 	target_id := FNV1aHash(node.Addr)
 	node.NodeInfoLock.RUnlock()
-	node.RemoteCall(addr, "Node.RPCFindPredecessor", target_id, &node_info)
+	err := node.RemoteCall(addr, "Node.RPCFindPredecessor", target_id, &node_info)
+	if err != nil || len(node_info.SuccessorList) == 0 {
+		logrus.Errorf("failed to find predecessor %s: %v", addr, err)
+		return false
+	}
 	node.NodeInfoLock.Lock()
 	node.Predecessor = node_info.Addr
 	node_info.Addr = node.Addr
