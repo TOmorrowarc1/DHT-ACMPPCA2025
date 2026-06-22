@@ -1,139 +1,151 @@
-# 环境配置文档
+# Environment Setup
 
-以下配置在 Ubuntu 22.04 下测试通过。
+The configuration below has been tested on Ubuntu 22.04.
 
-**注意：测试程序在 WSL 1 上无法正常运行**。请根据微软文档 [Check which version of WSL you are running](https://learn.microsoft.com/en-us/windows/wsl/install#check-which-version-of-wsl-you-are-running)，
-如果你正在使用 WSL 1，请 [Upgrade version from WSL 1 to WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2)。
+**Note: the test programs do not run correctly on WSL 1.** Follow the Microsoft documentation [Check which version of WSL you are running](https://learn.microsoft.com/en-us/windows/wsl/install#check-which-version-of-wsl-you-are-running); if you are on WSL 1, please [upgrade from WSL 1 to WSL 2](https://learn.microsoft.com/en-us/windows/wsl/install#upgrade-version-from-wsl-1-to-wsl-2).
 
-## 安装 Go
+## Installing Go
 
-本项目需要 Go 1.18 或以上版本。
+This project requires Go 1.18 or newer.
 
-
-输入
+Run:
 
 ```bash
 sudo apt install golang-go
 ```
 
-安装完成后之后运行以下命令检查 Go 版本：
+After installation, check the Go version:
 
 ```bash
 go version
 ```
 
-
-配置 [Go 模块代理](https://goproxy.cn/) 加速 Go 模块的下载：
+Configure the [Go module proxy](https://goproxy.cn/) to speed up module downloads:
 
 ```bash
 go env -w GO111MODULE=on
 go env -w GOPROXY=https://goproxy.cn,direct
 ```
 
-### 备用方案:
+### Alternative method
 
-删除旧版本 Go：
+Remove the old version of Go:
 
 ```bash
 sudo rm -rf /usr/local/go
 ```
 
-
-下载 Go 安装包：（你可以从 [Go 官网](https://go.dev/dl/) 获取最新版本下载链接）
+Download the Go archive (you can get the latest download link from the
+[Go website](https://go.dev/dl/)):
 
 ```bash
 curl -LO "https://go.dev/dl/go1.20.5.linux-amd64.tar.gz"
 ```
 
-解压到 `/usr/local` 目录：
+Extract it into `/usr/local`:
 
 ```bash
 sudo tar -C /usr/local -xzf go1.20.5.linux-amd64.tar.gz
 ```
 
-将 `/usr/local/go/bin` 目录添加到 PATH 环境变量中。
+Add `/usr/local/go/bin` to your `PATH`.
 
-如果你使用的是 bash，执行以下命令：
+If you use bash:
 
 ```bash
 echo 'export PATH="$PATH:/usr/local/go/bin"' >> ~/.bashrc
 ```
 
-如果你使用的是 zsh，执行以下命令：
+If you use zsh:
 
 ```bash
 echo 'export PATH="$PATH:/usr/local/go/bin"' >> ~/.zshrc
 ```
 
-重启终端使环境变量生效。
+Restart your terminal so the environment variable takes effect.
 
-## 配置 VSCode 开发环境
+## Setting up VS Code
 
-> 推荐使用 VSCode 作为开发工具。你也可以使用 GoLand 等其他 IDE，但是请自行解决环境配置问题。
+> VS Code is the recommended editor. You may also use other IDEs such as
+> GoLand, but you will need to solve the environment configuration yourself.
 
-> 如果你使用虚拟机或服务器，建议使用 VSCode 的 Remote - SSH 插件连接到虚拟机或服务器上进行开发。
+> If you work on a virtual machine or server, the VS Code Remote - SSH extension
+> is recommended for developing on it.
 
-安装 [VSCode Go 语言扩展](https://marketplace.visualstudio.com/items?itemName=golang.go)。
+Install the [VS Code Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go).
 
-安装后会弹出若干次缺包提示，内容类似于
+After installation you will be prompted several times to install missing tools,
+with messages such as:
 
 ```plain
 The "gopls" command is not available. Run "go install -v golang.org/x/tools/gopls@latest" to install.
 ```
 
-一律选择 Install。
+Choose Install for all of them.
 
-## 编译测试程序
+## Building the project
 
-进入项目根目录，执行以下命令：
-
-```bash
-go build
-```
-
-如果编译成功，会在当前目录下生成名为 `dht` 的可执行文件，这表示你的环境配置成功。
-
-你可以通过以下命令运行测试程序：
+From the project root, run:
 
 ```bash
-./dht -test all
+go build -o dht .
 ```
 
-测试需要一段时间，正常情况下你会看到测试通过的提示。你还会在当前目录下看到名为 `dht-test.log` 的日志文件，其中包含了测试程序的运行日志。
+If the build succeeds, an executable named `dht` is produced in the current directory, which means your environment is set up correctly.
+
+## Running the tests
+
+There are two test layers (see the [README](../README.md) for details).
+
+The in-process tests run many nodes on `127.0.0.1`:
+
+```bash
+go test ./node/...
+```
+
+The tests take a while. On success you will see output similar to:
 
 ```plain
-Final print:
-Basic test passed with fail rate 0.0000
-Force quit test passed with fail rate 0.0000
-Quit & Stabilize test passed with fail rate 0.0000
+Basic test passed.
+Force quit test passed.
+Quit & Stabilize test passed.
+ok      dht/node
 ```
 
-如果你遇到 `Too many open files` 的错误，可以参考 [资源释放](#资源释放) 部分。
+Each node writes its runtime log to `dht-test.log` in the working directory.
 
-## 资源释放
+If you encounter a `Too many open files` error, see [Releasing resource limits](#releasing-resource-limits) below.
 
-**注意：这部分配置不是必须的**，但是如果你测试程序运行时遇到问题，可以尝试以下配置。
-
-释放本项⽬需要的⼀些资源限制，包括 Port Range 和 Max File 和 TCP MSL。
+The Docker Compose integration tests require Docker with the Compose plugin(`docker compose`):
 
 ```bash
-sudo vim /etc/systcl.conf # 在该⽂件尾部添加下⾏
+go test ./test/integration/...
+```
+
+## Releasing resource limits
+
+**Note: this section is optional**, but if you run into problems while running the in-process tests, you can try the following configuration.
+
+Raise some of the resource limits this project needs, including the port range, the maximum number of open files, and the TCP MSL.
+
+```bash
+sudo vim /etc/sysctl.conf  # append the following lines
 net.ipv4.ip_local_port_range = 20240 65535
 net.ipv4.tcp_fin_timeout = 4
 ```
 
 ```bash
-sudo vim /etc/security/limits.conf # 在该⽂件尾部添加下⾯⼏⾏
+sudo vim /etc/security/limits.conf  # append the following lines
 * soft nofile 65535
 * hard nofile 65535
 ```
 
 ```bash
-reboot # 重启
+reboot  # restart
 ```
 
-## 参考资料
+## References
 
-- [mac OS下的资源限制 以及 引出的ulimit, launchctl, sysctl区别](https://blog.csdn.net/Lockheed_Hong/article/details/75258600)
-- [TCP/IP中MSL详解](https://blog.51cto.com/u_10706198/1775555)，
-- [GO111MODULE 是个啥？](https://zhuanlan.zhihu.com/p/374372749)
+- [Resource limits on macOS, and the difference between ulimit, launchctl, and sysctl](https://blog.csdn.net/Lockheed_Hong/article/details/75258600)
+- [Understanding MSL in TCP/IP](https://blog.51cto.com/u_10706198/1775555)
+- [What exactly is GO111MODULE?](https://zhuanlan.zhihu.com/p/374372749)
