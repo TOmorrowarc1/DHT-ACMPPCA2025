@@ -66,11 +66,9 @@ Restart your terminal so the environment variable takes effect.
 
 ## Setting up VS Code
 
-> VS Code is the recommended editor. You may also use other IDEs such as
-> GoLand, but you will need to solve the environment configuration yourself.
+> VS Code is the recommended editor. You may also use other IDEs such as GoLand, but you will need to solve the environment configuration yourself.
 
-> If you work on a virtual machine or server, the VS Code Remote - SSH extension
-> is recommended for developing on it.
+> If you work on a virtual machine or server, the VS Code Remote - SSH extension is recommended for developing on it.
 
 Install the [VS Code Go extension](https://marketplace.visualstudio.com/items?itemName=golang.go).
 
@@ -114,13 +112,9 @@ ok      dht/node
 
 Each node writes its runtime log to `dht-test.log` in the working directory.
 
+The four in-process tests (`TestBasic`, `TestForceQuit`, `TestQuitAndStabilize`, `TestDelete`) each use a separate, reserved port range, so you can run them together with `go test ./node/...` — or run them one at a time with `go test ./node -run TestBasic -v`.
+
 If you encounter a `Too many open files` error, see [Releasing resource limits](#releasing-resource-limits) below.
-
-The Docker Compose integration tests require Docker with the Compose plugin(`docker compose`):
-
-```bash
-go test ./test/integration/...
-```
 
 ## Releasing resource limits
 
@@ -130,7 +124,7 @@ Raise some of the resource limits this project needs, including the port range, 
 
 ```bash
 sudo vim /etc/sysctl.conf  # append the following lines
-net.ipv4.ip_local_port_range = 20240 65535
+net.ipv4.ip_local_port_range = 21000 65535
 net.ipv4.tcp_fin_timeout = 4
 ```
 

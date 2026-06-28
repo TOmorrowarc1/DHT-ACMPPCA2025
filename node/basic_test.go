@@ -26,8 +26,8 @@ func basicTest() (bool, int, int) {
 
 	testutil.Wg = new(sync.WaitGroup)
 	for i := 0; i <= testutil.BasicTestNodeSize; i++ {
-		nodes[i] = NewNode(testutil.FirstPort + i)
-		nodeAddresses[i] = portToAddr(localAddress, testutil.FirstPort+i)
+		nodes[i] = NewNode(testutil.BasicTestFirstPort + i)
+		nodeAddresses[i] = portToAddr(localAddress, testutil.BasicTestFirstPort+i)
 
 		testutil.Wg.Add(1)
 		go nodes[i].Run(testutil.Wg)

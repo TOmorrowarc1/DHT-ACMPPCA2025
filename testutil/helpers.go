@@ -11,6 +11,19 @@ import (
 const (
 	FirstPort int = 20000
 
+	// Each in-process test owns a distinct, non-overlapping port range so the
+	// whole package can be run in a single `go test ./node/...` invocation
+	// without ports from a finished test clashing with the next one. The ranges
+	// are kept below the ephemeral port range (see doc/env-setup.md).
+	//   TestBasic            : 20000 .. 20100 (up to 101 nodes)
+	//   TestForceQuit        : 20200 .. 20250 (up to  51 nodes)
+	//   TestQuitAndStabilize : 20400 .. 20450 (up to  51 nodes)
+	//   TestDelete           : 20600 .. 20620 (up to  21 nodes)
+	BasicTestFirstPort  int = FirstPort       // 20000
+	ForceQuitFirstPort  int = FirstPort + 200 // 20200
+	QASFirstPort        int = FirstPort + 400 // 20400
+	DeleteTestFirstPort int = FirstPort + 600 // 20600
+
 	LengthOfKeyValue int = 50
 
 	AfterTestSleepTime = 30 * time.Second

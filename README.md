@@ -1,34 +1,32 @@
-# Distributed Hash Table (Chord)
+# Distributed Hash Table - PPCA 2026
+
+## Overview
 
 A Distributed Hash Table (DHT) is a distributed system that provides a lookup service similar to a hash table: `(key, value)` pairs are stored across many nodes, and any participating node can efficiently retrieve the value associated with a given key. The goal is to store and retrieve data in a scalable, efficient and reliable manner.
 
-This repository implements the **Chord** protocol in Go. A node maintains a finger table and a successor list, replicates data to its successors, and keeps the ring consistent through periodic stabilization. Communication between nodes is done exclusively over the network using Go's `net/rpc`.
+There are many algorithms to implement DHT. For this project, you are required to **implement Chord protocol and Kademlia protocol**. You should **write a report for about one page**, probably about your architecture, innovation, features and references. 
+
+As a bonus, you can also 
+- implement an application of DHT (e.g., File-Transfer or Group-Chat-Room under local area network).
+- Append an implementation of the Delete() in Kademlia. 
 
 ## Project Layout
 
 ```
 .
 ├── main.go                  CLI entry point: interactive REPL + optional TCP command server
-├── go.mod / go.sum          module `dht`, Go 1.18 (logrus, fatih/color)
-├── node/                    Chord core
+├── go.mod / go.sum          module `dht`, Go 1.18
+├── node/                    core
 │   ├── interface.go         the DhtNode interface
-│   ├── node.go              Chord protocol (hashing, finger table, stabilize, replication, RPC)
+│   ├── node.go              Protocol - you should replace its implementation with Chord/Kademlia on different branches
 │   ├── factory.go           NewNode(port)
 │   ├── addr.go              local-address / port→addr helpers
-│   ├── basic_test.go        TestBasic (in-process)
-│   └── advance_test.go      TestForceQuit, TestQuitAndStabilize (in-process)
-├── network/
-│   └── pool.go              RPC connection pool over net/rpc
+│   ├── basic_test.go        TestBasic
+│   ├── advance_test.go TestForceQuit, TestQuitAndStabilize   
+│   └── delete_test.go      TestDelete
 ├── testutil/
 │   └── helpers.go           shared test constants, colored output, pass/fail metrics
-├── test/
-│   └── integration/         Docker Compose based integration tests
-│       ├── cluster.go       cluster harness, fault injection, workload generation
-│       └── cluster_test.go  TestMain bootstrap + TestReadWrite
-├── deploy/
-│   ├── Dockerfile           multi-stage build (golang:1.18-alpine → alpine:3.17 + iproute2)
-│   └── docker-compose.yml   3-node cluster with NET_ADMIN for fault injection
-└── doc/                     English documentation (setup, tutorial, Go reference)
+└── doc/                     documentation (setup & tutorial)
 ```
 
 ## Build and Run
@@ -56,9 +54,9 @@ Run another node that joins an existing one:
 | Flag | Default | Description |
 |---|---|---|
 | `-port` | `20000` | Port the node listens on for RPC. |
-| `-addr` | `127.0.0.1` | Address advertised to other nodes (use the container/host name in a cluster). |
+| `-addr` | `127.0.0.1` | Address advertised to other nodes (use a reachable host name when running across multiple machines). |
 | `-join` | _(empty)_ | Address of an existing node to join. If empty, the node creates a new ring. |
-| `-cmd-port` | `0` | Port for a line-based TCP command server (`0` disables it). Used by the integration tests. |
+| `-cmd-port` | `0` | Port for a line-based TCP command server (`0` disables it). Lets you drive a node over TCP, e.g. for scripting a multi-node demo. |
 
 ### Interactive commands
 
@@ -72,63 +70,69 @@ delete <key>          # remove a key, prints "true" / "false"
 quit                  # gracefully leave the ring and exit
 ```
 
+## Tutorial
+
+First, you should read the [Environment Setup](doc/env-setup.md) to setup your environment.
+
+A naive implementation of `dhtNode` is provided in `node/node.go`. You can use it as a reference. The code is well commented. It is suggested to **read it carefully**.
+
+You can read the [Tutorial](doc/tutorial.md) for more information about Go, DHT and how to debug.
+
+## Scores
+
+- 40% for the Chord Test
+  - 30% Basic test: naive test without "force quit".
+  - 10% Advance test: "Force quit" will be tested. There will be some more complex tests.
+- 40% for the Kademlia Test (Same as above)
+- 20% for a short report and code review
+- Extra 10% for the bonus
+
 ## Testing
 
-The project has **two independent test layers**.
+Note: **DHT tests cannot run successfully under Windows or WSL 1**. See [Environment Setup](doc/env-setup.md) for more information.
 
-### 1. In-process Go tests (`node/`)
+Contact TA if you find any bug in the test program, or if you have some test ideas, or if you think the tests are too hard and you want TA to make it easier.
 
-These spawn many nodes inside a single process on `127.0.0.1` and drive the
-`DhtNode` API directly. They require no external dependencies.
+### Basic Test
 
-```bash
-go test ./node/...
-```
+There are **5 rounds** of test in total. In each round,
 
-| Test | What it does |
-|---|---|
-| `TestBasic` | 5 rounds: nodes join, then `put`/`get`/`delete`, then nodes quit, repeated. |
-| `TestForceQuit` | Nodes join and load data, then repeatedly **force-quit** without graceful handoff. |
-| `TestQuitAndStabilize` | Nodes quit one by one while data is queried, exercising stabilization. |
+1. **20 nodes** join the network. Then **sleep for 10 seconds.**
+2. **Put 150 key-value pairs**, **query for 120 pairs**, and then **delete 75 pairs**. There is **no sleep time between two contiguous operations**.
+3. **10 nodes** quit from the network. Then **sleep for 10 seconds**.
+4. (The same as 2.) **Put 150 key-value pairs**, **query for 120 pairs**, and then **delete 75 pairs**. There is **no sleep time between two contiguous operations**.
 
-Sizing constants and the maximum allowed failure rates live in
-[`testutil/helpers.go`](testutil/helpers.go). These tests open a large number of
-sockets; if you hit `Too many open files`, see
-[Environment Setup](doc/env-setup.md).
+### Advance Test
 
-> Each node writes its runtime log to `dht-test.log` in the working directory.
+The advance test consists of "**Force-Quit Test**" and "**Quit & Stabilize Test**".
 
-### 2. Docker Compose integration tests (`test/integration/`)
+#### Force-Quit Test
 
-These exercise a **real, containerized cluster** and inject network faults. They
-require Docker with the Compose plugin (`docker compose`).
+The current test procedure is:
 
-```bash
-go test ./test/integration/...
-```
+* In the beginning, **50 nodes** join the network.
+* Then **put 500 key-value pairs**.
+* It follows by **9 rounds** of force quit. In each round,
+  1. **5 nodes force-quit** from the network. There is **500ms of sleep time** between each force-quit operation.
+  2. **Query for all key-value pairs**.
 
-`TestMain` builds the `dht-cluster` image from [`deploy/Dockerfile`](deploy/Dockerfile),
-starts the 3-node cluster defined in
-[`deploy/docker-compose.yml`](deploy/docker-compose.yml), runs the tests, and
-tears the cluster down. Commands are sent to each node over its `-cmd-port`
-(host ports `21001`–`21003`).
+#### Quit & Stabilize Test
 
-`TestReadWrite` runs the following subtests:
+The current test procedure is:
 
-| Subtest | Fault injected | Expectation |
-|---|---|---|
-| `healthy` | none | values put on `node1` are readable from `node2`. |
-| `delay_200ms` | `tc netem` 200 ms delay on `node2` | reads still succeed (with measurable latency). |
-| `loss_50pct` | 50% packet loss on `node2` | reads may retry but should not corrupt data. |
-| `kill_recovery` | `docker kill node2` | data is still readable from `node3` via replication. |
+* In the beginning, **50 nodes** join the network.
+* Then **put 500 key-value pairs**.
+* Next, **every node will quit from the network**:
+  1. One node quits.
+  2. After the node quitting from the network, there is **80ms of sleep time**. And then **20 key-value pairs will be queried for**.
 
-The cluster harness (`cluster.go`) also exposes pause/unpause, network
-partition (`ip link`), log inspection and a workload generator for writing
-additional scenarios. Fault injection relies on `iproute2` (installed in the
-image) and the `NET_ADMIN` capability (granted in the compose file).
+### Delete Test
 
-## Documentation
+The delete test focuses on the **removal of key-value pairs** from the nodes. The current test procedure is:
 
-- [Environment Setup](doc/env-setup.md) — install Go, configure the toolchain, and raise resource limits.
-- [Tutorial](doc/tutorial.md) — learning resources for Go, DHT protocols, and debugging tips.
-- [Go Language Reference](doc/Go.md) — a condensed reference of Go syntax and semantics.
+* In the beginning, **21 nodes** join the network.
+* Then **put 200 key-value pairs**.
+* **Delete every key-value pair**. Each deletion of an existing key must **succeed**.
+* **Query for every deleted key**. None of them should be found any more.
+* **Delete the already-removed keys again**. Each of these deletions must **report failure**.
+

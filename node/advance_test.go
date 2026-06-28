@@ -29,8 +29,8 @@ func forceQuitTest() (bool, int, int) {
 
 	testutil.Wg = new(sync.WaitGroup)
 	for i := 0; i <= testutil.ForceQuitNodeSize; i++ {
-		nodes[i] = NewNode(testutil.FirstPort + i)
-		nodeAddresses[i] = portToAddr(localAddress, testutil.FirstPort+i)
+		nodes[i] = NewNode(testutil.ForceQuitFirstPort + i)
+		nodeAddresses[i] = portToAddr(localAddress, testutil.ForceQuitFirstPort+i)
 
 		testutil.Wg.Add(1)
 		go nodes[i].Run(testutil.Wg)
@@ -148,8 +148,8 @@ func quitAndStabilizeTest() (bool, int, int) {
 
 	testutil.Wg = new(sync.WaitGroup)
 	for i := 0; i <= testutil.QASNodeSize; i++ {
-		nodes[i] = NewNode(testutil.FirstPort + i)
-		nodeAddresses[i] = portToAddr(localAddress, testutil.FirstPort+i)
+		nodes[i] = NewNode(testutil.QASFirstPort + i)
+		nodeAddresses[i] = portToAddr(localAddress, testutil.QASFirstPort+i)
 
 		testutil.Wg.Add(1)
 		go nodes[i].Run(testutil.Wg)

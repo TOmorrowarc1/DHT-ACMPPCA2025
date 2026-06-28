@@ -15,10 +15,7 @@ A condensed Go syntax and semantics reference is also available in [Go.md](Go.md
 The tests initialize a number of DHT nodes on your machine that exchange
 information and maintain structure over the network, simulating how the system would behave across several distributed servers. You **should not** communicate through any channel other than the network (e.g. shared memory); your program **must** work correctly in a genuinely distributed setting.
 
-This repository ships with two test layers:
-
-- **In-process Go tests** under `node/` (`go test ./node/...`), which spawn many nodes on `127.0.0.1`.
-- **Docker Compose integration tests** under `test/integration/` (`go test ./test/integration/...`), which run a containerized cluster and inject network faults.
+The tests in this repository are **in-process Go tests** under `node/` (`go test ./node/...`), which spawn many nodes on `127.0.0.1`.
 
 See the project [README](../README.md) for details.
 
