@@ -2,11 +2,18 @@ package testutil
 
 import (
 	"math/rand"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/fatih/color"
 )
+
+func init() {
+	if os.Getenv("NO_COLOR") == "" {
+		color.NoColor = false
+	}
+}
 
 const (
 	FirstPort int = 20000
