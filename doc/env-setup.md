@@ -112,8 +112,6 @@ ok      dht/node
 
 Each node writes its runtime log to `dht-test.log` in the working directory.
 
-The four in-process tests (`TestBasic`, `TestForceQuit`, `TestQuitAndStabilize`, `TestDelete`) each use a separate, reserved port range, so you can run them together with `go test ./node/...` — or run them one at a time with `go test ./node -run TestBasic -v`.
-
 If you encounter a `Too many open files` error, see [Releasing resource limits](#releasing-resource-limits) below.
 
 ## Releasing resource limits

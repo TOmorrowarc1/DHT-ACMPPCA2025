@@ -91,6 +91,16 @@ You can read the [Tutorial](doc/tutorial.md) for more information about Go, DHT 
 
 Note: **DHT tests cannot run successfully under Windows or WSL 1**. See [Environment Setup](doc/env-setup.md) for more information.
 
+The four in-process tests (`TestBasic`, `TestForceQuit`, `TestQuitAndStabilize`, `TestDelete`) each use a separate, reserved port range, so you can run them together with `go test ./node/...` — or run them one at a time with `go test ./node -run TestBasic -v`.
+
+Attention: The tests can take longer than Go's default 10‑minute timeout, so **always disable the timeout when running these tests:**
+
+```bash
+go test ./node -run TestBasic -v -timeout 0
+```
+
+(Use `-timeout 0` to turn off the limit entirely, or a generous value like `-timeout 30m`.)
+
 Contact TA if you find any bug in the test program, or if you have some test ideas, or if you think the tests are too hard and you want TA to make it easier.
 
 ### Basic Test
